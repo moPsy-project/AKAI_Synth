@@ -17,10 +17,68 @@ COL_RED_BLINK    = 4
 COL_YELLOW       = 5
 COL_YELLOW_BLINK = 6
 
+
+class MidiMessageProcessorBase:
+    """Base class for MIDI message processors"""
+    
+    def __init__(self):
+        return
+    
+    
+    def match(self, msg):
+        """Return true if the message should be processed."""
+        
+        return False
+    
+    
+    def process(self, msg):
+        """Process the message"""
+        
+        return
+
+
+class MidiMessagePrinter(MidiMessageProcessorBase):
+    def __init__(self):
+        return
+    
+    
+    def match(self, msg):
+        return True
+    
+    
+    def process(self, msg):
+        print(msg)
+        return
+
+
+class KnobColorProcessor(MidiMessageProcessorBase):
+    def __init__(self, apc_out):
+        self.apc_out = apc_out
+        return
+    
+    
+    def match(self, msg):
+        return msg.type=="control_change" and msg.channel==0 and msg.control==48;
+    
+    
+    def process(self, msg):
+        self.apc_out.send(mido.Message('note_on', channel=0, note=0, velocity=msg.value//16))
+        
+        return
+
+
+processors = [MidiMessagePrinter()]
+
+
+def apc_midi_msg_in(msg):
+    for proc in processors:
+        if proc.match(msg):
+            proc.process(msg)
+
+
 def sigint_handler(signal, frame):
     print("SIGINT received. Exit.")
     sys.exit(0)
-
 
 if __name__ == '__main__':
     signal.signal(signal.SIGINT, sigint_handler)
@@ -35,8 +93,12 @@ if __name__ == '__main__':
     
     print("Using MIDI port ", apc_name);
     
-    inport = mido.open_input(apc_name)
+    apc_in = mido.open_input(apc_name,
+                             callback=apc_midi_msg_in)
     apc_out = mido.open_output(apc_name)
+    
+    processors.append(KnobColorProcessor(apc_out))
+    
     outport = mido.open_output()
     
     for c in range(0, 5):
@@ -44,15 +106,7 @@ if __name__ == '__main__':
             msg = mido.Message('note_on', channel=0, note=c*8+i, velocity=i)
             apc_out.send(msg)
     
-    while (1):
-        msg = inport.receive()
-        print(msg)
-        
-        if msg.channel==0 and msg.control==48:
-            msg2 = mido.Message('note_on', channel=0, note=0, velocity=msg.value//16)
-            apc_out.send(msg2)
-        
-        outport.send(msg)
+    input("Press key to finish...")
 
 
 
