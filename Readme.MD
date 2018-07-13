@@ -10,3 +10,4 @@ libjack-dev:0.125.0-2
 libportmidi0:1:217-6
 
 pip3 python-rtmidi
+pip3 sounddevice
