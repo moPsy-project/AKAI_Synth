@@ -112,6 +112,11 @@ if __name__ == '__main__':
             apc_out.send(msg)
     
     input("Press key to finish...")
+    
+    # Cleanup
+    apc_in.close()
+    apc_out.close()
+    outport.close()
 
 
 
