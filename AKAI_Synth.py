@@ -50,19 +50,76 @@ def note2freq(note):
     return SCALE_TONE_FREQUENCIES[step] * coeff
 
 
-def playsine(f, duration):
+# Sample frequency
+samples = 44100
+
+
+# Hull curve parameters
+hull_t_attack  = 0.05    # time s
+hull_t_decay   = 0.10    # time s
+hull_t_release = 0.25    # time s
+hull_a_sustain = 0.90    # amplitude
+
+
+def calculate_hull(t_attack,
+                   t_decay,
+                   t_release,
+                   a_sustain,
+                   duration):
+    t_sustain = duration - t_attack - t_decay
+    if t_sustain < 0:
+        t_sustain = 0
+
+    # construct the hull curve
+    hull_attack  = np.linspace(0, 1, 
+                               num=samples * t_attack)
+    hull_decay   = np.linspace(1, a_sustain, 
+                               num = samples * t_decay)
+    hull_sustain = np.linspace(a_sustain, a_sustain, 
+                               num = samples * t_sustain)
+    hull_release = np.linspace(a_sustain, 0, num = 
+                               samples * t_release)
+    
+    new_hull = hull_attack
+    new_hull = np.append(new_hull, hull_decay)
+    new_hull = np.append(new_hull, hull_sustain)
+    new_hull = np.append(new_hull, hull_release)
+    
+    return new_hull
+
+
+global_hull = np.array([])
+
+def update_hull(duration):
+    global global_hull
+    
+    global_hull = calculate_hull(hull_t_attack,
+                                 hull_t_decay,
+                                 hull_t_release,
+                                 hull_a_sustain,
+                                 duration)
+    return
+
+
+def playsine(f):
     w = 2 * np.pi * f
-    samples = 44100
-    t = np.linspace(0, w*duration, num=samples*duration)
+    
+    length = global_hull.size
+    
+    t = np.linspace(0, w*length/samples, num=length)
+    
     sine = np.sin(t)
     
-    sounddevice.play(sine, samples)
+    sounddevice.play(sine*global_hull, samples)
     
     return
 
+
 def beep_on_note(note):
+    update_hull(0.25)
+    
     freq = note2freq(note)
-    playsine(freq, 0.25)
+    playsine(freq)
     
     return;
 
