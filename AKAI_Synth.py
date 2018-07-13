@@ -9,6 +9,11 @@ import sys
 
 import mido
 
+import sounddevice
+
+import numpy as np
+
+
 COL_OFF          = 0
 COL_GREEN        = 1
 COL_GREEN_BLINK  = 2
@@ -16,6 +21,17 @@ COL_RED          = 3
 COL_RED_BLINK    = 4
 COL_YELLOW       = 5
 COL_YELLOW_BLINK = 6
+
+
+def playsine(f, duration):
+    w = 2 * np.pi * f
+    samples = 44100
+    t = np.linspace(0, w*duration, num=samples*duration)
+    sine = np.sin(t)
+    
+    sounddevice.play(sine, samples)
+    
+    return
 
 
 class MidiMessageProcessorBase:
@@ -67,7 +83,27 @@ class KnobColorProcessor(MidiMessageProcessorBase):
         return
 
 
-processors = [MidiMessagePrinter()]
+class SineAudioprocessor(MidiMessageProcessorBase):
+    def __init__(self):
+        return
+    
+    
+    def match(self, msg):
+        return (msg.type=='note_on' or msg.type=='note_off') and msg.channel==1
+    
+    
+    def process(self, msg):
+        if msg.type=='note_on':
+            step = msg.note % 12
+            print("Step: ", step)
+            
+            if step == 9:
+                playsine(440, 0.25)
+        
+        return
+
+
+processors = [MidiMessagePrinter(), SineAudioprocessor()]
 
 
 def apc_midi_msg_in(msg):
@@ -110,6 +146,7 @@ if __name__ == '__main__':
         for i in range(0, 8):
             msg = mido.Message('note_on', channel=0, note=c*8+i, velocity=i)
             apc_out.send(msg)
+    
     
     input("Press key to finish...")
     
