@@ -86,11 +86,16 @@ if __name__ == '__main__':
     mido.set_backend('mido.backends.rtmidi')
     
     print(mido.get_input_names())
+        
+    apc_names = list(filter(lambda n: n[0:10] == 'APC Key 25',
+                            mido.get_input_names()))
+    print("Available APCs: ", apc_names)
     
-    apc_name = mido.get_input_names()[0]
-    apc_name = 'APC Key 25:APC Key 25 MIDI 1 24:0'
-    # TODO select from input names
+    if not apc_names:
+        print("Did not find APC controller!")
+        sys.exit(-1)
     
+    apc_name = apc_names[0]
     print("Using MIDI port ", apc_name);
     
     apc_in = mido.open_input(apc_name,
