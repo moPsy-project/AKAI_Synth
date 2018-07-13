@@ -11,6 +11,7 @@ import mido
 
 import sounddevice
 
+import math
 import numpy as np
 
 
@@ -23,6 +24,32 @@ COL_YELLOW       = 5
 COL_YELLOW_BLINK = 6
 
 
+# Source: https://upload.wikimedia.org/wikipedia/commons/a/ad/Piano_key_frequencies.png
+SCALE_TONE_FREQUENCIES = [
+    261.626, # C4 (Middle C)
+    277.183, # C#4 / Db4
+    293.665, # D4
+    311.127, # D#4 / Eb4
+    329.628, # E4
+    349.228, # F4
+    369.994, # F#4 / Gb4
+    391.995, # G4
+    415.305, # G#4 / Ab4
+    440.000, # A4
+    466.164, # A#4, Bb4
+    493.883, # B
+]
+
+
+def note2freq(note):
+    step = note % 12
+    
+    octave = note // 12
+    coeff = math.pow(2, octave - 4)
+    
+    return SCALE_TONE_FREQUENCIES[step] * coeff
+
+
 def playsine(f, duration):
     w = 2 * np.pi * f
     samples = 44100
@@ -32,6 +59,12 @@ def playsine(f, duration):
     sounddevice.play(sine, samples)
     
     return
+
+def beep_on_note(note):
+    freq = note2freq(note)
+    playsine(freq, 0.25)
+    
+    return;
 
 
 class MidiMessageProcessorBase:
@@ -94,11 +127,7 @@ class SineAudioprocessor(MidiMessageProcessorBase):
     
     def process(self, msg):
         if msg.type=='note_on':
-            step = msg.note % 12
-            print("Step: ", step)
-            
-            if step == 9:
-                playsine(440, 0.25)
+            beep_on_note(msg.note)
         
         return
 
