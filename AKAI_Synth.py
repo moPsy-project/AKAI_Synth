@@ -54,38 +54,7 @@ def note2freq(note):
 samples = 44100
 
 
-# Hull curve parameters
-hull_t_attack  = 0.05    # time s
-hull_t_decay   = 0.10    # time s
-hull_t_release = 0.25    # time s
-hull_a_sustain = 0.90    # amplitude
 
-
-def calculate_hull(t_attack,
-                   t_decay,
-                   t_release,
-                   a_sustain,
-                   duration):
-    t_sustain = duration - t_attack - t_decay
-    if t_sustain < 0:
-        t_sustain = 0
-
-    # construct the hull curve
-    hull_attack  = np.linspace(0, 1, 
-                               num=samples * t_attack)
-    hull_decay   = np.linspace(1, a_sustain, 
-                               num = samples * t_decay)
-    hull_sustain = np.linspace(a_sustain, a_sustain, 
-                               num = samples * t_sustain)
-    hull_release = np.linspace(a_sustain, 0, num = 
-                               samples * t_release)
-    
-    new_hull = hull_attack
-    new_hull = np.append(new_hull, hull_decay)
-    new_hull = np.append(new_hull, hull_sustain)
-    new_hull = np.append(new_hull, hull_release)
-    
-    return new_hull
 
 
 global_hull = np.array([])
@@ -116,8 +85,6 @@ def playsine(f):
 
 
 def beep_on_note(note):
-    update_hull(0.25)
-    
     freq = note2freq(note)
     playsine(freq)
     
@@ -189,6 +156,104 @@ class SineAudioprocessor(MidiMessageProcessorBase):
         return
 
 
+def calculate_hull(t_attack,
+                   t_decay,
+                   t_release,
+                   a_sustain,
+                   duration):
+    t_sustain = duration - t_attack - t_decay
+    if t_sustain < 0:
+        t_sustain = 0
+
+    # construct the hull curve
+    hull_attack  = np.linspace(0, 1, 
+                               num=samples * t_attack)
+    hull_decay   = np.linspace(1, a_sustain, 
+                               num = samples * t_decay)
+    hull_sustain = np.linspace(a_sustain, a_sustain, 
+                               num = samples * t_sustain)
+    hull_release = np.linspace(a_sustain, 0, num = 
+                               samples * t_release)
+    
+    new_hull = hull_attack
+    new_hull = np.append(new_hull, hull_decay)
+    new_hull = np.append(new_hull, hull_sustain)
+    new_hull = np.append(new_hull, hull_release)
+    
+    return new_hull
+
+
+class HullCurveControls(MidiMessageProcessorBase):
+    # Hull curve parameters
+    hull_t_attack  = 0.05    # time s
+    hull_t_decay   = 0.10    # time s
+    hull_t_release = 0.25    # time s
+    hull_a_sustain = 0.90    # amplitude
+    
+    duration = 0.25
+    
+    def __init__(self, apc_out):
+        self.apc_out = apc_out
+        
+        # Knob to value mapping
+        self.knob_map = np.linspace(0, 1.7, num=128)
+        self.knob_map = np.power(10, self.knob_map)
+        self.knob_map -= 1
+        self.knob_map /= 9
+
+        
+        # TODO can we get the values here?
+        
+        self.update_hull()
+        
+        return
+    
+    def match(self, msg):
+        return msg.type=="control_change" and msg.channel==0 and msg.control in range(52, 56);
+    
+    
+    def adapt_knob_values(self, msg):
+        # set the values according to Knob
+        
+        if msg.control == 52: #attack time
+            self.hull_t_attack = self.knob_map[msg.value]
+            print("Changed attack time to ", self.hull_t_attack, "s.");
+        
+        if msg.control == 53: #decay time
+            self.hull_t_decay = self.knob_map[msg.value]
+            print("Changed decay time to ", self.hull_t_decay, "s.");
+        
+        if msg.control == 54: #sustain amplitude
+            self.hull_a_sustain = msg.value/127
+            print("Changed sustain amplitude to ", self.hull_a_sustain*100, "%.");
+        
+        if msg.control == 55: #release time
+            self.hull_t_release = self.knob_map[msg.value]
+            print("Changed release time to ", self.hull_t_release, "s.");
+        
+        return
+    
+    
+    def update_hull(self):
+        global global_hull
+        
+        global_hull = calculate_hull(self.hull_t_attack,
+                                     self.hull_t_decay,
+                                     self.hull_t_release,
+                                     self.hull_a_sustain,
+                                     self.duration)
+        return
+    
+    
+    def process(self, msg):
+        # set the values according to Knob
+        self.adapt_knob_values(msg)
+        
+        self.update_hull()
+        
+        return
+
+
 processors = [MidiMessagePrinter(), SineAudioprocessor()]
 
 
@@ -225,6 +290,7 @@ if __name__ == '__main__':
     apc_out = mido.open_output(apc_name)
     
     processors.append(KnobColorProcessor(apc_out))
+    processors.append(HullCurveControls(apc_out))
     
     outport = mido.open_output()
     
