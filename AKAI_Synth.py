@@ -175,8 +175,24 @@ class KnobPanelListener:
     
     def process_knob_value_change(self, idx, value):
         pass
-    
 
+
+# This control controls the knobs and tracks their status
+# via eight dispatch panel buttons.
+#
+# Differences between internal target values and knob values are
+# displayed via colors.
+#
+# Button colors are:
+#   OFF         Knob is not in sync with internal value
+#   GREEN       Knob and value are in sync
+#   GREEN BLINK Value will follow knob, but they are out of sync
+#   RED         Knob value is greater than target
+#   YELLOW      Knob value is lower than target
+#
+# To use the knob value as target value, press the dispatch panel 
+# button. This will activate tracking and use a value as soon as
+# it is available.
 class KnobPanel(MidiMessageProcessorBase, DispatchPanelListener):
     DISPATCH_NOTES = [36, 37, 38, 39,
                       28, 29, 30, 31]
@@ -206,7 +222,7 @@ class KnobPanel(MidiMessageProcessorBase, DispatchPanelListener):
         # so far knob values are unknown
         for i in range(0, 8):
             self._update_knob_midi_value(i, None)
-            self.set_target_value(i, 64)
+            self.set_target_value(i, 0)
         
         self.dp.add_dispatch_panel_listener(self)
         
@@ -234,10 +250,7 @@ class KnobPanel(MidiMessageProcessorBase, DispatchPanelListener):
         self.midi_values[idx] = value
         
         # check knob synchronization
-        if value == None:
-            # lose sync if there is no midi value
-            self.knob_sync[idx] = False
-        elif not self.knob_sync[idx]:
+        if not self.knob_sync[idx]:
             # sync if midi equals target value
             self.knob_sync[idx] = (value == self.target_values[idx])
 
@@ -260,6 +273,7 @@ class KnobPanel(MidiMessageProcessorBase, DispatchPanelListener):
         self.knob_sync[idx] = (self.midi_values[idx] == value)
         
         self.target_values[idx] = value
+        
         # notify listeners
         self._dispatch_knob_value_change(idx, value)
         
@@ -271,12 +285,16 @@ class KnobPanel(MidiMessageProcessorBase, DispatchPanelListener):
         color = COL_OFF
         
         if self.midi_values[idx] == None:
-            color = COL_OFF
+            # without a value, blink if synchronized
+            color = COL_GREEN_BLINK if self.knob_sync[idx] else COL_OFF
         elif self.midi_values[idx] > self.target_values[idx]:
+            # red if knob is greater than target
             color = COL_RED
         elif self.midi_values[idx] < self.target_values[idx]:
+            # yellow of knob is lower than target
             color = COL_YELLOW
         else:
+            # green if both are equal
             color = COL_GREEN
         
         self.dp.setColor(self.DISPATCH_NOTES[idx], color)
@@ -291,12 +309,16 @@ class KnobPanel(MidiMessageProcessorBase, DispatchPanelListener):
         
         idx = self.DISPATCH_NOTES.index(note)
         
+        # set synced
+        self.knob_sync[idx] = True
+        
         # set midi value to target value, if available
         value = self.midi_values[idx]
         if value != None:
             self.set_target_value(idx, value)
-        
-        # else do nothing
+        else:
+            # needs to be called explicitly heres
+            self._update_color(idx)
         
         return
     
@@ -386,7 +408,7 @@ def calculate_hull(t_attack,
     return new_hull
 
 
-class HullCurveControls(MidiMessageProcessorBase):
+class HullCurveControls(KnobPanelListener):
     # Hull curve parameters
     hull_t_attack  = 0.05    # time s
     hull_t_decay   = 0.10    # time s
@@ -395,8 +417,11 @@ class HullCurveControls(MidiMessageProcessorBase):
     
     duration = 0.25
     
-    def __init__(self, apc_out):
-        self.apc_out = apc_out
+    def __init__(self, knob_panel):
+        super().__init__()
+        self.kp = knob_panel
+        
+        self.kp.add_knob_value_listener(self)
         
         # Knob to value mapping
         self.knob_map = np.linspace(0, 1.7, num=128)
@@ -411,27 +436,24 @@ class HullCurveControls(MidiMessageProcessorBase):
         
         return
     
-    def match(self, msg):
-        return msg.type=="control_change" and msg.channel==0 and msg.control in range(52, 56);
     
-    
-    def adapt_knob_values(self, msg):
+    def adapt_knob_values(self, idx, value):
         # set the values according to Knob
         
-        if msg.control == 52: #attack time
-            self.hull_t_attack = self.knob_map[msg.value]
+        if idx == 4: #attack time
+            self.hull_t_attack = self.knob_map[value]
             print("Changed attack time to ", self.hull_t_attack, "s.");
         
-        if msg.control == 53: #decay time
-            self.hull_t_decay = self.knob_map[msg.value]
+        if idx == 5: #decay time
+            self.hull_t_decay = self.knob_map[value]
             print("Changed decay time to ", self.hull_t_decay, "s.");
         
-        if msg.control == 54: #sustain amplitude
-            self.hull_a_sustain = msg.value/127
+        if idx == 6: #sustain amplitude
+            self.hull_a_sustain = value/127
             print("Changed sustain amplitude to ", self.hull_a_sustain*100, "%.");
         
-        if msg.control == 55: #release time
-            self.hull_t_release = self.knob_map[msg.value]
+        if idx == 7: #release time
+            self.hull_t_release = self.knob_map[value]
             print("Changed release time to ", self.hull_t_release, "s.");
         
         return
@@ -448,9 +470,9 @@ class HullCurveControls(MidiMessageProcessorBase):
         return
     
     
-    def process(self, msg):
+    def process_knob_value_change(self, idx, value):
         # set the values according to Knob
-        self.adapt_knob_values(msg)
+        self.adapt_knob_values(idx, value)
         
         self.update_hull()
         
@@ -496,9 +518,10 @@ if __name__ == '__main__':
     kp = KnobPanel(dp)
     
     processors.append(KnobColorProcessor(apc_out))
-    processors.append(HullCurveControls(apc_out))
     processors.append(dp)
     processors.append(kp)
+    
+    hc = HullCurveControls(kp)
     
     outport = mido.open_output()
     
