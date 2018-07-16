@@ -294,10 +294,10 @@ if __name__ == '__main__':
     
     outport = mido.open_output()
     
-    for c in range(0, 5):
-        for i in range(0, 8):
-            msg = mido.Message('note_on', channel=0, note=c*8+i, velocity=i)
-            apc_out.send(msg)
+#    for c in range(0, 5):
+#        for i in range(0, 8):
+#            msg = mido.Message('note_on', channel=0, note=c*8+i, velocity=i)
+#            apc_out.send(msg)
     
     
     input("Press key to finish...")
