@@ -169,6 +169,150 @@ class DispatchPanel(MidiMessageProcessorBase):
         return
 
 
+class KnobPanelListener:
+    def __init(self):
+        return
+    
+    def process_knob_value_change(self, idx, value):
+        pass
+    
+
+class KnobPanel(MidiMessageProcessorBase, DispatchPanelListener):
+    DISPATCH_NOTES = [36, 37, 38, 39,
+                      28, 29, 30, 31]
+    
+    KNOB_CONTROLS = [48, 49, 50, 51,
+                     52, 53, 54, 55]
+    
+    # Values obtained by MIDI message
+    midi_values = [None, None, None, None,
+                   None, None, None, None]
+    
+    target_values = [0, 0, 0, 0,
+                     0, 0, 0, 0]
+    
+    # true if the knob is in sync,
+    # i.e. the target value has been explicitly set by the midi value
+    knob_sync = [False, False, False, False,
+                 False, False, False, False]
+    
+    knob_value_listeners = []
+    
+    def __init__(self, dispatchPanel):
+        super().__init__()
+        self.dp = dispatchPanel
+        
+        # TODO can we get the values here?
+        # so far knob values are unknown
+        for i in range(0, 8):
+            self._update_knob_midi_value(i, None)
+            self.set_target_value(i, 64)
+        
+        self.dp.add_dispatch_panel_listener(self)
+        
+        return
+    
+    
+    def match(self, msg):
+        return msg.type=="control_change" and msg.channel==0 and msg.control in self.KNOB_CONTROLS
+    
+    
+    def process(self, msg):
+        idx = self.KNOB_CONTROLS.index(msg.control)
+        # raises exception on unknown control. We should have filtered this earlier
+        
+        self._update_knob_midi_value(idx, msg.value)
+        
+        return
+    
+    
+    def _update_knob_midi_value(self, idx, value):
+        if idx >= len(self.midi_values):
+            return # TODO exception
+        
+        # store midi value
+        self.midi_values[idx] = value
+        
+        # check knob synchronization
+        if value == None:
+            # lose sync if there is no midi value
+            self.knob_sync[idx] = False
+        elif not self.knob_sync[idx]:
+            # sync if midi equals target value
+            self.knob_sync[idx] = (value == self.target_values[idx])
+
+        # this is an extra call to notify the listeners
+        if self.knob_sync[idx]:
+            # adjust target value if in sync
+            self.target_values[idx] = value
+            # notify listeners
+            self._dispatch_knob_value_change(idx, value)
+        
+        self._update_color(idx)
+        return
+    
+    
+    def set_target_value(self, idx, value):
+        if idx >= len(self.target_values):
+            return # TODO exception
+        
+        # check if knob will de-sync
+        self.knob_sync[idx] = (self.midi_values[idx] == value)
+        
+        self.target_values[idx] = value
+        # notify listeners
+        self._dispatch_knob_value_change(idx, value)
+        
+        self._update_color(idx)
+        return
+    
+    
+    def _update_color(self, idx):
+        color = COL_OFF
+        
+        if self.midi_values[idx] == None:
+            color = COL_OFF
+        elif self.midi_values[idx] > self.target_values[idx]:
+            color = COL_RED
+        elif self.midi_values[idx] < self.target_values[idx]:
+            color = COL_YELLOW
+        else:
+            color = COL_GREEN
+        
+        self.dp.setColor(self.DISPATCH_NOTES[idx], color)
+        
+        return
+    
+    
+    def process_button_pressed(self, note):
+        # check if relevant
+        if not note in self.DISPATCH_NOTES:
+            return
+        
+        idx = self.DISPATCH_NOTES.index(note)
+        
+        # set midi value to target value, if available
+        value = self.midi_values[idx]
+        if value != None:
+            self.set_target_value(idx, value)
+        
+        # else do nothing
+        
+        return
+    
+    
+    def add_knob_value_listener(self, listener):
+        if listener:
+            self.knob_value_listeners.append(listener)
+        return
+    
+    
+    def _dispatch_knob_value_change(self, idx, value):
+        for l in self.knob_value_listeners:
+            l.process_knob_value_change(idx, value)
+        return
+
+
 class MidiMessagePrinter(MidiMessageProcessorBase):
     def __init__(self):
         return
@@ -349,10 +493,12 @@ if __name__ == '__main__':
     apc_out = mido.open_output(apc_name)
     
     dp = DispatchPanel(apc_out)
+    kp = KnobPanel(dp)
     
     processors.append(KnobColorProcessor(apc_out))
     processors.append(HullCurveControls(apc_out))
     processors.append(dp)
+    processors.append(kp)
     
     outport = mido.open_output()
     
