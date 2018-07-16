@@ -431,6 +431,11 @@ class HullCurveControls(KnobPanelListener):
 
         
         # TODO can we get the values here?
+        # use the knob panel and observer mechanism to set the initial values
+        self.kp.set_target_value(4, 12) # Attack
+        self.kp.set_target_value(5, 21) # Decay
+        self.kp.set_target_value(6, 115) # Sustain
+        self.kp.set_target_value(7, 39) # Release
         
         self.update_hull()
         
