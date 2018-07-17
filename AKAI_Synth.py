@@ -14,6 +14,9 @@ import sounddevice
 import math
 import numpy as np
 
+# local modules
+from midiproc import MidiMessageProcessorBase, MidiMessagePrinter
+
 
 COL_OFF          = 0
 COL_GREEN        = 1
@@ -89,25 +92,6 @@ def beep_on_note(note):
     playsine(freq)
     
     return;
-
-
-class MidiMessageProcessorBase:
-    """Base class for MIDI message processors"""
-    
-    def __init__(self):
-        return
-    
-    
-    def match(self, msg):
-        """Return true if the message should be processed."""
-        
-        return False
-    
-    
-    def process(self, msg):
-        """Process the message"""
-        
-        return
 
 
 class DispatchPanelListener():
@@ -335,20 +319,6 @@ class KnobPanel(MidiMessageProcessorBase, DispatchPanelListener):
         return
 
 
-class MidiMessagePrinter(MidiMessageProcessorBase):
-    def __init__(self):
-        return
-    
-    
-    def match(self, msg):
-        return True
-    
-    
-    def process(self, msg):
-        print(msg)
-        return
-
-
 class KnobColorProcessor(MidiMessageProcessorBase):
     def __init__(self, apc_out):
         self.apc_out = apc_out
@@ -484,7 +454,8 @@ class HullCurveControls(KnobPanelListener):
         return
 
 
-processors = [MidiMessagePrinter(), SineAudioprocessor()]
+processors = [MidiMessagePrinter(), 
+              SineAudioprocessor()]
 
 
 def apc_midi_msg_in(msg):
