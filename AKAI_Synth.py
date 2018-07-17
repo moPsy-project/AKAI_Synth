@@ -9,11 +9,6 @@ import sys
 
 import mido
 
-import sounddevice
-
-import math
-import numpy as np
-
 # local modules
 from midiproc import MidiMessageProcessorBase, MidiMessagePrinter
 from dispatchpanel import DispatchPanel, DispatchPanelListener
