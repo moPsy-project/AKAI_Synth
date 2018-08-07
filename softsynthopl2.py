@@ -12,11 +12,15 @@ import sounddevice
 
 import math
 import numpy as np
+from scipy import signal
 
 
 # local modules
 from midiproc import MidiMessageProcessorBase
 from knobpanel import KnobPanelListener
+from dispatchpanel import DispatchPanelListener
+import dispatchpanel
+
 from waveoutput import WaveOutput
 
 
@@ -66,26 +70,36 @@ def update_hull(duration):
     return
 
 
-def playsine(f):
+def playwave(f,
+             waveform = 1):
     w = 2 * np.pi * f
     
     length = global_hull.size
     
     t = np.linspace(0, w*length/samples, num=length)
     
-    sine = np.sin(t)
     
-    wave_output = sine*global_hull
+    if waveform == 1: # SINE
+        wave = np.sin(t)
+    elif waveform == 2: # SAWTOOTH
+        wave = signal.sawtooth(t)
+    elif waveform == 3: # SQUARE
+        wave = signal.square(t)
+    else: # unknown waveform
+        wave = np.array([0]*length, dtype='float64')
+    
+    wave_output = wave*global_hull
     
     wo.play(wave_output)
-    #sounddevice.play(wave_output, samples)
     
     return
 
 
-def beep_on_note(note):
+def beep_on_note(note,
+                 waveform = 1):
     freq = note2freq(note)
-    playsine(freq)
+    
+    playwave(freq, waveform=waveform)
     
     return;
 
@@ -118,19 +132,18 @@ def calculate_hull(t_attack,
 
 
 class HullCurveControls(KnobPanelListener):
-    # Hull curve parameters
-    hull_t_attack  = 0.05    # time s
-    hull_t_decay   = 0.10    # time s
-    hull_t_release = 0.25    # time s
-    hull_a_sustain = 0.90    # amplitude
-    
-    duration = 0.25
-    
     def __init__(self, knob_panel):
         super().__init__()
         self.kp = knob_panel
-        
         self.kp.add_knob_value_listener(self)
+        
+        # Hull curve parameters
+        self.hull_t_attack  = 0.05    # time s
+        self.hull_t_decay   = 0.10    # time s
+        self.hull_t_release = 0.25    # time s
+        self.hull_a_sustain = 0.90    # amplitude
+        
+        self.duration = 0.25
         
         # Knob to value mapping
         self.knob_map = np.linspace(0, 1.7, num=128)
@@ -193,8 +206,27 @@ class HullCurveControls(KnobPanelListener):
         return
 
 
-class SineAudioprocessor(MidiMessageProcessorBase):
-    def __init__(self):
+class SineAudioprocessor(MidiMessageProcessorBase,
+                         DispatchPanelListener):
+    
+    SINE = 1
+    SAWTOOTH = 2
+    SQUARE = 3
+    
+    WAVECOLOR = [dispatchpanel.COL_GREEN,
+                 dispatchpanel.COL_YELLOW,
+                 dispatchpanel.COL_RED]
+    
+    WAVENOTE = 23
+    
+    def __init__(self, dispatch_panel):
+        super().__init__()
+        
+        self.dp = dispatch_panel
+        dispatch_panel.add_dispatch_panel_listener(self)
+        
+        self.set_waveform(SineAudioprocessor.SINE)
+        
         return
     
     
@@ -204,9 +236,31 @@ class SineAudioprocessor(MidiMessageProcessorBase):
     
     def process(self, msg):
         if msg.type=='note_on':
-            beep_on_note(msg.note)
+            beep_on_note(msg.note, waveform=self.waveform)
         
         return
+    
+    
+    def process_button_pressed(self, note):
+        print("note", note)
+        
+        if note == 23:
+            # set waveform
+            wf = self.waveform + 1
+            if wf > len(SineAudioprocessor.WAVECOLOR):
+                wf = 1
+            self.set_waveform(wf)
+        
+        return
+    
+    
+    def set_waveform(self, waveform):
+        self.waveform = waveform
+        self.dp.setColor(SineAudioprocessor.WAVENOTE,
+                         SineAudioprocessor.WAVECOLOR[self.waveform-1])
+        return
+
+
 
 
 # kate: space-indent on; indent-width 4; mixedindent off; indent-mode python; indend-pasted-text false; remove-trailing-space off
