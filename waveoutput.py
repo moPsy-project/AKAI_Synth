@@ -14,21 +14,21 @@ import numpy as np
 import threading
 
 class WaveOutput:
-    samplerate = 44100
-    blocksize = samplerate // 100
-    
-    silence = [0] * blocksize
-    stop_hull = np.linspace(1.0, 0.0, num=blocksize)
-
-    
     o_slice = None
     o_idx = 0
     o_lock = threading.Lock()
     
     
-    def __init__(self):
+    def __init__(self,
+                 samplerate=44100,
+                 blocksize=441):
         super().__init__()
         
+        self.samplerate = samplerate
+        self.blocksize = blocksize
+        
+        self.stop_hull = np.linspace(1.0, 0.0, num=blocksize)
+
         return
     
     
@@ -86,7 +86,7 @@ class WaveOutput:
         self.o_lock.acquire()
 
         if self.o_slice == None:
-            outdata[:, 0] = self.silence
+            outdata[:, 0] = [0] * len(outdata[:, 0])
         else:
             #print("found data, index", self.o_idx)
             outdata[:, 0] = self.o_slice[self.o_idx]
