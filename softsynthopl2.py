@@ -70,32 +70,25 @@ def update_hull(duration):
     return
 
 
-def playsine(f):
+def playwave(f,
+             waveform = 1):
     w = 2 * np.pi * f
     
     length = global_hull.size
     
     t = np.linspace(0, w*length/samples, num=length)
     
-    sine = np.sin(t)
     
-    wave_output = sine*global_hull
+    if waveform == 1: # SINE
+        wave = np.sin(t)
+    elif waveform == 2: # SAWTOOTH
+        wave = signal.sawtooth(t)
+    elif waveform == 3: # SQUARE
+        wave = signal.square(t)
+    else: # unknown waveform
+        wave = np.array([0]*length, dtype='float64')
     
-    wo.play(wave_output)
-    
-    return
-
-
-def playsawtooth(f):
-    w = 2 * np.pi * f
-    
-    length = global_hull.size
-    
-    t = np.linspace(0, w*length/samples, num=length)
-    
-    sine = signal.sawtooth(t)
-    
-    wave_output = sine*global_hull
+    wave_output = wave*global_hull
     
     wo.play(wave_output)
     
@@ -103,13 +96,10 @@ def playsawtooth(f):
 
 
 def beep_on_note(note,
-                 sawtooth = False):
+                 waveform = 1):
     freq = note2freq(note)
     
-    if sawtooth:
-        playsawtooth(freq)
-    else:
-        playsine(freq)
+    playwave(freq, waveform=waveform)
     
     return;
 
