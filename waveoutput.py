@@ -11,6 +11,8 @@ import sounddevice
 import math
 import numpy as np
 
+import threading
+
 class WaveOutput:
     samplerate = 44100
     blocksize = samplerate // 100
@@ -21,6 +23,7 @@ class WaveOutput:
     
     o_slice = None
     o_idx = 0
+    o_lock = threading.Lock()
     
     
     def __init__(self):
@@ -48,6 +51,9 @@ class WaveOutput:
     
     
     def play(self, wave):
+        # acquire lock for the output queue
+        self.o_lock.acquire()
+        
         # mute the current sample if available
         if self.o_slice:
             print("Prepending a sliencer")
@@ -66,6 +72,9 @@ class WaveOutput:
         self.o_slice =  np.split(wave, slices)
         self.o_idx = 0
         
+        # release lock for the output queue
+        self.o_lock.release()
+        
         return
     
     
@@ -73,7 +82,9 @@ class WaveOutput:
         if status:
             print(status)
         
-        global wave_output
+        # acquire lock for the output queue
+        self.o_lock.acquire()
+
         if self.o_slice == None:
             outdata[:, 0] = self.silence
         else:
@@ -84,6 +95,8 @@ class WaveOutput:
             if self.o_idx >= len(self.o_slice):
                 self.o_slice = None
         
+        # release lock for the output queue
+        self.o_lock.release()
         
         return
 
