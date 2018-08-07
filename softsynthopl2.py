@@ -18,6 +18,9 @@ from scipy import signal
 # local modules
 from midiproc import MidiMessageProcessorBase
 from knobpanel import KnobPanelListener
+from dispatchpanel import DispatchPanelListener
+import dispatchpanel
+
 from waveoutput import WaveOutput
 
 
@@ -214,8 +217,27 @@ class HullCurveControls(KnobPanelListener):
         return
 
 
-class SineAudioprocessor(MidiMessageProcessorBase):
-    def __init__(self):
+class SineAudioprocessor(MidiMessageProcessorBase,
+                         DispatchPanelListener):
+    
+    SINE = 1
+    SAWTOOTH = 2
+    SQUARE = 3
+    
+    WAVECOLOR = [dispatchpanel.COL_GREEN,
+                 dispatchpanel.COL_YELLOW,
+                 dispatchpanel.COL_RED]
+    
+    WAVENOTE = 23
+    
+    def __init__(self, dispatch_panel):
+        super().__init__()
+        
+        self.dp = dispatch_panel
+        dispatch_panel.add_dispatch_panel_listener(self)
+        
+        self.set_waveform(SineAudioprocessor.SINE)
+        
         return
     
     
@@ -225,9 +247,31 @@ class SineAudioprocessor(MidiMessageProcessorBase):
     
     def process(self, msg):
         if msg.type=='note_on':
-            beep_on_note(msg.note, sawtooth=True)
+            beep_on_note(msg.note, waveform=self.waveform)
         
         return
+    
+    
+    def process_button_pressed(self, note):
+        print("note", note)
+        
+        if note == 23:
+            # set waveform
+            wf = self.waveform + 1
+            if wf > len(SineAudioprocessor.WAVECOLOR):
+                wf = 1
+            self.set_waveform(wf)
+        
+        return
+    
+    
+    def set_waveform(self, waveform):
+        self.waveform = waveform
+        self.dp.setColor(SineAudioprocessor.WAVENOTE,
+                         SineAudioprocessor.WAVECOLOR[self.waveform-1])
+        return
+
+
 
 
 # kate: space-indent on; indent-width 4; mixedindent off; indent-mode python; indend-pasted-text false; remove-trailing-space off
