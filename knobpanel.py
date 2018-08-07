@@ -131,7 +131,7 @@ class KnobPanel(MidiMessageProcessorBase, DispatchPanelListener):
         
         if self.midi_values[idx] == None:
             # without a value, blink if synchronized
-            color = dispatchpanel.COL_GREEN_BLINK if self.knob_sync[idx] else dispatchpanel.COL_OFF
+            color = dispatchpanel.COL_GREEN_BLINK if self.knob_sync[idx] else dispatchpanel.COL_RED_BLINK
         elif self.midi_values[idx] > self.target_values[idx]:
             # red if knob is greater than target
             color = dispatchpanel.COL_RED
