@@ -154,31 +154,80 @@ class ChannelQueue:
         
         self._release()
         return self.current
-    
-    
+
+
 class WaveOutput:
-    o_slice = None
-    o_idx = 0
-    o_lock = threading.Lock()
-    
-    
+    # the empty_callback gets the channel number as argument
     def __init__(self,
                  samplerate=44100,
-                 blocksize=441):
+                 blocksize=441,
+                 channels=1,
+                 empty_callback=None):
         super().__init__()
         
         self.samplerate = samplerate
         self.blocksize = blocksize
+        self.channels = channels
+        self.empty_callback = empty_callback
         
-        self.stop_hull = np.linspace(1.0, 0.0, num=blocksize)
-
+        # order in which channels have been used
+        self.order = [] 
+        
+        self.channel_lock = threading.RLock()
+        
+        # available channels
+        self.ch = []
+        for i in range(1, channels+1):
+            self.ch.append(
+                ChannelQueue(channel_number = i,
+                             empty_callback = self.channel_empty_callback))
+        
         return
     
+    
+    def _remove_ch_from_order(self, ch):
+        self.channel_lock.acquire()
+        
+        self.order = [c for c in self.order if c != ch]
+        
+        self.channel_lock.release()
+        return
+    
+    
+    def _put_ch_to_order(self, ch):
+        self.channel_lock.acquire()
+
+        self._remove_ch_from_order(ch)
+        self.order.append(ch)
+        
+        self.channel_lock.release()
+        return
+    
+    def _find_free_channel(self):
+        self.channel_lock.acquire()
+
+        ch = 0
+        
+        # try an unused channel
+        unused = [c for c in range(0, self.channels) if c not in self.order]
+        
+        if len(unused) > 0:
+            ch = unused[0]
+        else:
+            # if not available use the channel that has been used for the longest time
+            ch = self.order[0]
+        
+        self.channel_lock.release()
+        return ch
+        
     
     def start(self):
         self.stream = sounddevice.OutputStream(
                 samplerate = self.samplerate,
                 blocksize = self.blocksize,
+                #channels=self.channels,
+                # this does not work too well,
+                # we better mix ourselves
                 channels=1,
                 callback=self.sd_callback)
         
@@ -193,30 +242,37 @@ class WaveOutput:
         return
     
     
-    def play(self, wave):
-        # acquire lock for the output queue
-        self.o_lock.acquire()
+    def play(self,
+             wave,
+             channel=0,
+             replace=True):
+        self.channel_lock.acquire()
         
-        # mute the current sample if available
-        if self.o_slice:
-            print("Prepending a sliencer")
-            cur = self.o_slice[self.o_idx]
-            silencer = cur * self.stop_hull
-            wave = np.insert(wave, 0, silencer)
-        
-        rem = len(wave) % self.blocksize
-        if rem != 0:
-            add = self.blocksize - rem
-            print("Adding", add, "silence samples")
-            wave = np.append(wave, [0]*add)
+        c = 0
 
-        slices = len(wave) // self.blocksize
-
-        self.o_slice =  np.split(wave, slices)
-        self.o_idx = 0
+        # take the channel that has been used last
+        if c == 0:
+            c = self._find_free_channel()
+        else:
+            c = channel-1
         
-        # release lock for the output queue
-        self.o_lock.release()
+        if replace:
+            self.ch[c].replace(wave, blocksize=self.blocksize)
+        else:
+            self.ch[c].enqueue(wave)
+        
+        self._put_ch_to_order(c)
+        
+        self.channel_lock.release()
+        
+        return c
+    
+    
+    def channel_empty_callback(self, channel_number):
+        self._put_ch_to_order(channel_number-1)
+        
+        if self.empty_callback is not None:
+            self.empty_callback(channel_number)
         
         return
     
@@ -224,23 +280,17 @@ class WaveOutput:
     def sd_callback(self, outdata, frames, time, status):
         if status:
             print(status)
-        
-        # acquire lock for the output queue
-        self.o_lock.acquire()
-
-        if self.o_slice == None:
-            outdata[:, 0] = [0] * len(outdata[:, 0])
-        else:
-            #print("found data, index", self.o_idx)
-            outdata[:, 0] = self.o_slice[self.o_idx]
             
-            self.o_idx += 1
-            if self.o_idx >= len(self.o_slice):
-                self.o_slice = None
+        output = np.array([0]*self.blocksize, dtype='float64')
         
-        # release lock for the output queue
-        self.o_lock.release()
+        for i in range(0, self.channels):
+        #    outdata[:, i] = self.ch[i].get(self.blocksize, pad=True)
+            output += self.ch[i].get(self.blocksize, pad=True)
+            
+        output /= self.channels
         
+        outdata[:, 0] = output
+
         return
 
 
