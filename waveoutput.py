@@ -283,8 +283,7 @@ class WaveOutput:
             
         output = np.array([0]*self.blocksize, dtype='float64')
         
-        for i in range(0, self.channels):
-        #    outdata[:, i] = self.ch[i].get(self.blocksize, pad=True)
+        for i in self.order:
             output += self.ch[i].get(self.blocksize, pad=True)
             
         output /= self.channels
