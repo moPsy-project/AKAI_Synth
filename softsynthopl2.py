@@ -13,10 +13,15 @@ import sounddevice
 import math
 import numpy as np
 
+
 # local modules
 from midiproc import MidiMessageProcessorBase
 from knobpanel import KnobPanelListener
+from waveoutput import WaveOutput
 
+
+wo = WaveOutput()
+wo.start()
 
 # Source: https://upload.wikimedia.org/wikipedia/commons/a/ad/Piano_key_frequencies.png
 SCALE_TONE_FREQUENCIES = [
@@ -70,7 +75,10 @@ def playsine(f):
     
     sine = np.sin(t)
     
-    sounddevice.play(sine*global_hull, samples)
+    wave_output = sine*global_hull
+    
+    wo.play(wave_output)
+    #sounddevice.play(wave_output, samples)
     
     return
 
