@@ -246,24 +246,23 @@ class WaveOutput:
              wave,
              channel=0,
              replace=True):
-        self.channel_lock.acquire()
-        
-        c = 0
 
         # take the channel that has been used last
+        self.channel_lock.acquire()
+
+        c = 0
         if c == 0:
             c = self._find_free_channel()
         else:
             c = channel-1
+        self._put_ch_to_order(c)
+            
+        self.channel_lock.release()
         
         if replace:
             self.ch[c].replace(wave, blocksize=self.blocksize)
         else:
             self.ch[c].enqueue(wave)
-        
-        self._put_ch_to_order(c)
-        
-        self.channel_lock.release()
         
         return c
     
