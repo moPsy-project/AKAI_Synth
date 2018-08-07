@@ -16,6 +16,8 @@ class WaveOutput:
     blocksize = samplerate // 100
     
     silence = [0] * blocksize
+    stop_hull = np.linspace(1.0, 0.0, num=blocksize)
+
     
     o_slice = None
     o_idx = 0
@@ -46,6 +48,13 @@ class WaveOutput:
     
     
     def play(self, wave):
+        # mute the current sample if available
+        if self.o_slice:
+            print("Prepending a sliencer")
+            cur = self.o_slice[self.o_idx]
+            silencer = cur * self.stop_hull
+            wave = np.insert(wave, 0, silencer)
+        
         rem = len(wave) % self.blocksize
         if rem != 0:
             add = self.blocksize - rem
