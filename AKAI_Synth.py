@@ -32,8 +32,7 @@ class KnobColorProcessor(MidiMessageProcessorBase):
         return
 
 
-processors = [MidiMessagePrinter(), 
-              SineAudioprocessor()]
+processors = [MidiMessagePrinter()]
 
 
 def apc_midi_msg_in(msg):
@@ -72,6 +71,7 @@ if __name__ == '__main__':
     dp = DispatchPanel(apc_out)
     kp = KnobPanel(dp)
     
+    processors.append(SineAudioprocessor(dp))
     processors.append(KnobColorProcessor(apc_out))
     processors.append(dp)
     processors.append(kp)
