@@ -12,6 +12,7 @@ import sounddevice
 
 import math
 import numpy as np
+from scipy import signal
 
 
 # local modules
@@ -78,14 +79,34 @@ def playsine(f):
     wave_output = sine*global_hull
     
     wo.play(wave_output)
-    #sounddevice.play(wave_output, samples)
     
     return
 
 
-def beep_on_note(note):
+def playsawtooth(f):
+    w = 2 * np.pi * f
+    
+    length = global_hull.size
+    
+    t = np.linspace(0, w*length/samples, num=length)
+    
+    sine = signal.sawtooth(t)
+    
+    wave_output = sine*global_hull
+    
+    wo.play(wave_output)
+    
+    return
+
+
+def beep_on_note(note,
+                 sawtooth = False):
     freq = note2freq(note)
-    playsine(freq)
+    
+    if sawtooth:
+        playsawtooth(freq)
+    else:
+        playsine(freq)
     
     return;
 
@@ -204,7 +225,7 @@ class SineAudioprocessor(MidiMessageProcessorBase):
     
     def process(self, msg):
         if msg.type=='note_on':
-            beep_on_note(msg.note)
+            beep_on_note(msg.note, sawtooth=True)
         
         return
 
