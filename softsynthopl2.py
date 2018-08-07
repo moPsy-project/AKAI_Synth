@@ -132,19 +132,18 @@ def calculate_hull(t_attack,
 
 
 class HullCurveControls(KnobPanelListener):
-    # Hull curve parameters
-    hull_t_attack  = 0.05    # time s
-    hull_t_decay   = 0.10    # time s
-    hull_t_release = 0.25    # time s
-    hull_a_sustain = 0.90    # amplitude
-    
-    duration = 0.25
-    
     def __init__(self, knob_panel):
         super().__init__()
         self.kp = knob_panel
-        
         self.kp.add_knob_value_listener(self)
+        
+        # Hull curve parameters
+        self.hull_t_attack  = 0.05    # time s
+        self.hull_t_decay   = 0.10    # time s
+        self.hull_t_release = 0.25    # time s
+        self.hull_a_sustain = 0.90    # amplitude
+        
+        self.duration = 0.25
         
         # Knob to value mapping
         self.knob_map = np.linspace(0, 1.7, num=128)
