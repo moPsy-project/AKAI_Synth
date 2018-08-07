@@ -20,7 +20,7 @@ from knobpanel import KnobPanelListener
 from waveoutput import WaveOutput
 
 
-wo = WaveOutput()
+wo = WaveOutput(channels=8)
 wo.start()
 
 # Source: https://upload.wikimedia.org/wikipedia/commons/a/ad/Piano_key_frequencies.png
