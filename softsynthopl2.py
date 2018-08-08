@@ -44,106 +44,21 @@ SCALE_TONE_FREQUENCIES = [
 ]
 
 
-def note2freq(note):
-    step = note % 12
-    
-    octave = note // 12
-    coeff = math.pow(2, octave - 4)
-    
-    return SCALE_TONE_FREQUENCIES[step] * coeff
-
-
-# Sample frequency
-samples = 44100
-
-
-global_hull = np.array([])
-
-def update_hull(duration):
-    global global_hull
-    
-    global_hull = calculate_hull(hull_t_attack,
-                                 hull_t_decay,
-                                 hull_t_release,
-                                 hull_a_sustain,
-                                 duration)
-    return
-
-
-def playwave(f,
-             waveform = 1):
-    w = 2 * np.pi * f
-    
-    length = global_hull.size
-    
-    t = np.linspace(0, w*length/samples, num=length)
-    
-    
-    if waveform == 1: # SINE
-        wave = np.sin(t)
-    elif waveform == 2: # SAWTOOTH
-        wave = signal.sawtooth(t)
-    elif waveform == 3: # SQUARE
-        wave = signal.square(t)
-    else: # unknown waveform
-        wave = np.array([0]*length, dtype='float64')
-    
-    wave_output = wave*global_hull
-    
-    wo.play(wave_output)
-    
-    return
-
-
-def beep_on_note(note,
-                 waveform = 1):
-    freq = note2freq(note)
-    
-    playwave(freq, waveform=waveform)
-    
-    return;
-
-
-def calculate_hull(t_attack,
-                   t_decay,
-                   t_release,
-                   a_sustain,
-                   duration):
-    t_sustain = duration - t_attack - t_decay
-    if t_sustain < 0:
-        t_sustain = 0
-
-    # construct the hull curve
-    hull_attack  = np.linspace(0, 1, 
-                               num=samples * t_attack)
-    hull_decay   = np.linspace(1, a_sustain, 
-                               num = samples * t_decay)
-    hull_sustain = np.linspace(a_sustain, a_sustain, 
-                               num = samples * t_sustain)
-    hull_release = np.linspace(a_sustain, 0, num = 
-                               samples * t_release)
-    
-    new_hull = hull_attack
-    new_hull = np.append(new_hull, hull_decay)
-    new_hull = np.append(new_hull, hull_sustain)
-    new_hull = np.append(new_hull, hull_release)
-    
-    return new_hull
-
-
 class HullCurveControls(KnobPanelListener):
-    def __init__(self, knob_panel):
+    def __init__(self, 
+                 knob_panel,
+                 parameter_callback=None):
         super().__init__()
         self.kp = knob_panel
         self.kp.add_knob_value_listener(self)
+        
+        self.parameter_callback = parameter_callback
         
         # Hull curve parameters
         self.hull_t_attack  = 0.05    # time s
         self.hull_t_decay   = 0.10    # time s
         self.hull_t_release = 0.25    # time s
         self.hull_a_sustain = 0.90    # amplitude
-        
-        self.duration = 0.25
         
         # Knob to value mapping
         self.knob_map = np.linspace(0, 1.7, num=128)
@@ -187,14 +102,13 @@ class HullCurveControls(KnobPanelListener):
     
     
     def update_hull(self):
-        global global_hull
-        
-        global_hull = calculate_hull(self.hull_t_attack,
-                                     self.hull_t_decay,
-                                     self.hull_t_release,
-                                     self.hull_a_sustain,
-                                     self.duration)
+        if self.parameter_callback is not None:
+            self.parameter_callback(self.hull_t_attack,
+                                    self.hull_t_decay,
+                                    self.hull_t_release,
+                                    self.hull_a_sustain)
         return
+    
     
     
     def process_knob_value_change(self, idx, value):
@@ -206,18 +120,85 @@ class HullCurveControls(KnobPanelListener):
         return
 
 
-class SineAudioprocessor(MidiMessageProcessorBase,
-                         DispatchPanelListener):
+class FrequencyControl(KnobPanelListener):
+    def __init__(self, 
+                 knob_panel):
+        super().__init__()
+        self.kp = knob_panel
+        self.kp.add_knob_value_listener(self)
+        
+        # Knob amplitude mapping
+        self.knob_amp_map = np.linspace(-0.9, 0, num=64)
+        self.knob_amp_map = np.append(self.knob_amp_map,
+                                  np.linspace(0, 0.9, num=64))
+        
+        # Knob to frequency value mapping
+        self.knob_fmul_map = np.linspace(1/16, 1, num=64)
+        self.knob_fmul_map = np.append(self.knob_fmul_map,
+                                  np.linspace(1, 16, num=64))
+        
+        # use the knob panel and observer mechanism to set the initial values
+        self.amp = [0.5, 0.5]
+        self.kp.set_target_value(0, 64)
+        self.freqmul = 1
+        self.kp.set_target_value(1, 64) 
+        
+        return
     
+    
+    def adapt_knob_values(self, idx, value):
+        # set the values according to Knob
+        
+        
+        if idx == 0: #amplitude distribution
+            v = self.knob_amp_map[value]
+            self.amp[0] = 1 - v
+            self.amp[1] = 1 + v
+            
+            print("Changed amplitudes to ", self.amp[0], "and", self.amp[1], ".");
+        
+        if idx == 1: #frequency multiplier
+            self.freqmul = self.knob_fmul_map[value]
+            print("Changed frequency multiplier to ", self.freqmul, ".");
+        
+        return
+    
+    
+    def process_knob_value_change(self, idx, value):
+        # set the values according to Knob
+        self.adapt_knob_values(idx, value)
+        
+        return
+    
+    
+    def get_amp(self, idx):
+        return self.amp[idx]
+    
+    
+    def get_freqmul(self):
+        return self.freqmul
+
+
+class WaveControls(DispatchPanelListener):
+    NONE = 0
+    
+    # wave forms
     SINE = 1
     SAWTOOTH = 2
     SQUARE = 3
     
-    WAVECOLOR = [dispatchpanel.COL_GREEN,
+    # operation modes
+    MUL = 1
+    ADD = 2
+    FOLD = 3
+    
+    MODECOLOR = [dispatchpanel.COL_OFF,
+                 dispatchpanel.COL_GREEN,
                  dispatchpanel.COL_YELLOW,
                  dispatchpanel.COL_RED]
     
-    WAVENOTE = 23
+    WAVENOTES = [22, 23]
+    OPNOTE = 21
     
     def __init__(self, dispatch_panel):
         super().__init__()
@@ -225,7 +206,74 @@ class SineAudioprocessor(MidiMessageProcessorBase,
         self.dp = dispatch_panel
         dispatch_panel.add_dispatch_panel_listener(self)
         
-        self.set_waveform(SineAudioprocessor.SINE)
+        self.waveform=[0,0]
+        self.set_waveform(WaveControls.SINE, 0)
+        self.set_waveform(WaveControls.SINE, 1)
+        
+        self.set_op_mode(WaveControls.FOLD)
+        
+        return
+    
+    
+    def process_button_pressed(self, note):
+        print("note", note)
+        
+        if note in self.WAVENOTES:
+            idx = self.WAVENOTES.index(note)
+            # set waveform
+            wf = self.waveform[idx] + 1
+            if wf >= len(WaveControls.MODECOLOR):
+                wf = 0
+            self.set_waveform(wf, idx)
+        
+        if note == self.OPNOTE:
+            op = self.op_mode + 1
+            if op >= len(WaveControls.MODECOLOR):
+                op = 0
+            self.set_op_mode(op)
+        
+        return
+    
+    
+    def set_waveform(self, waveform, idx=0):
+        self.waveform[idx] = waveform
+        self.dp.setColor(WaveControls.WAVENOTES[idx],
+                         WaveControls.MODECOLOR[waveform])
+        return
+    
+    
+    def get_waveform(self, idx=0):
+        return self.waveform[idx]
+    
+    
+    def set_op_mode(self, op_mode):
+        self.op_mode = op_mode
+        self.dp.setColor(WaveControls.OPNOTE,
+                         WaveControls.MODECOLOR[op_mode])
+    
+    
+    def get_op_mode(self):
+        return self.op_mode
+
+
+class SineAudioprocessor(MidiMessageProcessorBase,
+                         DispatchPanelListener):
+    
+    def __init__(self, 
+                 dispatch_panel, 
+                 knob_panel,
+                 sample_frequency=44100):
+        super().__init__()
+        
+        self.sample_frequency = sample_frequency
+        
+        self.duration = 0.25
+        self.hull = np.array([])
+        
+        self.hc = HullCurveControls(knob_panel,
+                                    parameter_callback=self.update_hull)
+        self.fc = FrequencyControl(knob_panel)
+        self.wc = WaveControls(dispatch_panel)
         
         return
     
@@ -236,31 +284,136 @@ class SineAudioprocessor(MidiMessageProcessorBase,
     
     def process(self, msg):
         if msg.type=='note_on':
-            beep_on_note(msg.note, waveform=self.waveform)
+            self.play_note(msg.note)
         
         return
     
     
-    def process_button_pressed(self, note):
-        print("note", note)
+    def play_note(self, note):
+        freq = self.note2freq(note)
         
-        if note == 23:
-            # set waveform
-            wf = self.waveform + 1
-            if wf > len(SineAudioprocessor.WAVECOLOR):
-                wf = 1
-            self.set_waveform(wf)
+        # amplitudes
+        a0 = self.fc.get_amp(0)
+        a1 = a1 = self.fc.get_amp(1)
         
-        return
-    
-    
-    def set_waveform(self, waveform):
-        self.waveform = waveform
-        self.dp.setColor(SineAudioprocessor.WAVENOTE,
-                         SineAudioprocessor.WAVECOLOR[self.waveform-1])
-        return
+        # frequency multiplier for the second wave
+        fmul = self.fc.get_freqmul()
+        
+        op_mode = self.wc.get_op_mode()
+        
+        # generate second wave, use wave0 as basewave in op mode FOLD
+        if self.wc.get_waveform(1) == WaveControls.NONE:
+            wave1 = 1
+        else:
+            wave1 = self.genwave(freq*fmul,
+                                 self.wc.get_waveform(1))
+        # apply amplitude
+        wave1 *= a1
 
+        # generate base wave
+        if self.wc.get_waveform(0) == WaveControls.NONE:
+            wave0 = 1
+        else:
+            basewave = wave1 if op_mode == WaveControls.FOLD else None
+            wave0 = self.genwave(freq, 
+                                 self.wc.get_waveform(0), 
+                                 basewave)
+        # apply amplitude
+        wave0 *= a0
+        
+        
+        # combine the waves bases on op mode
+        if op_mode == WaveControls.MUL:
+            wave = wave0 * wave1
+        elif op_mode == WaveControls.ADD:
+            wave = wave0 + wave1
+            # normalize the amplitude
+            wave /= 2
+        elif op_mode == WaveControls.FOLD:
+            wave = wave0
+        else:
+            wave = wave0
+        
+        wave_output = wave * self.hull
+        
+        wo.play(wave_output)
+        
+        return
+    
+    
+    def note2freq(self, note):
+        step = note % 12
+        
+        octave = note // 12
+        coeff = math.pow(2, octave - 4)
+        
+        return SCALE_TONE_FREQUENCIES[step] * coeff
+    
+    
+    def genwave(self, f, waveform, basewave=None):
+        w = 2 * np.pi * f
+        
+        length = self.hull.size
+        
+        
+        t = np.linspace(0, w*length/self.sample_frequency, num=length)
 
+        if basewave is not None:
+            t += basewave
+        
+        if waveform == WaveControls.SINE:
+            wave = np.sin(t)
+        elif waveform == WaveControls.SAWTOOTH:
+            wave = signal.sawtooth(t)
+        elif waveform == WaveControls.SQUARE:
+            wave = signal.square(t)
+        else: # unknown waveform or NONE
+            wave = np.array([0]*length, dtype='float64')
+        
+        return wave
+    
+    
+    def update_hull(self,
+                    attack,
+                    decay,
+                    release,
+                    sustain):
+        self.hull = self.calculate_hull(attack,
+                                        decay,
+                                        release,
+                                        sustain,
+                                        self.duration)
+        return
+    
+    
+    def calculate_hull(self,
+                       t_attack,
+                       t_decay,
+                       t_release,
+                       a_sustain,
+                       duration):
+        t_sustain = duration - t_attack - t_decay
+        if t_sustain < 0:
+            t_sustain = 0
+        
+        samples = self.sample_frequency
+        
+        # construct the hull curve
+        hull_attack  = np.linspace(0, 1, 
+                                num=samples * t_attack)
+        hull_decay   = np.linspace(1, a_sustain, 
+                                num = samples * t_decay)
+        hull_sustain = np.linspace(a_sustain, a_sustain, 
+                                num = samples * t_sustain)
+        hull_release = np.linspace(a_sustain, 0, num = 
+                                samples * t_release)
+        
+        new_hull = hull_attack
+        new_hull = np.append(new_hull, hull_decay)
+        new_hull = np.append(new_hull, hull_sustain)
+        new_hull = np.append(new_hull, hull_release)
+        
+        return new_hull
 
 
 # kate: space-indent on; indent-width 4; mixedindent off; indent-mode python; indend-pasted-text false; remove-trailing-space off

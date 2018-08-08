@@ -16,22 +16,6 @@ from knobpanel import KnobPanel, KnobPanelListener
 from softsynthopl2 import HullCurveControls, SineAudioprocessor
 
 
-class KnobColorProcessor(MidiMessageProcessorBase):
-    def __init__(self, apc_out):
-        self.apc_out = apc_out
-        return
-    
-    
-    def match(self, msg):
-        return msg.type=="control_change" and msg.channel==0 and msg.control==48;
-    
-    
-    def process(self, msg):
-        self.apc_out.send(mido.Message('note_on', channel=0, note=0, velocity=msg.value//16))
-        
-        return
-
-
 processors = [MidiMessagePrinter()]
 
 
@@ -71,20 +55,11 @@ if __name__ == '__main__':
     dp = DispatchPanel(apc_out)
     kp = KnobPanel(dp)
     
-    processors.append(SineAudioprocessor(dp))
-    processors.append(KnobColorProcessor(apc_out))
+    processors.append(SineAudioprocessor(dp, kp))
     processors.append(dp)
     processors.append(kp)
     
-    hc = HullCurveControls(kp)
-    
     outport = mido.open_output()
-    
-#    for c in range(0, 5):
-#        for i in range(0, 8):
-#            msg = mido.Message('note_on', channel=0, note=c*8+i, velocity=i)
-#            apc_out.send(msg)
-    
     
     input("Press key to finish...")
     
@@ -92,7 +67,6 @@ if __name__ == '__main__':
     apc_in.close()
     apc_out.close()
     outport.close()
-
 
 
 # kate: space-indent on; indent-width 4; mixedindent off; indent-mode python; indend-pasted-text false; remove-trailing-space off
