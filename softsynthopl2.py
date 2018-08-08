@@ -43,62 +43,22 @@ SCALE_TONE_FREQUENCIES = [
     493.883, # B
 ]
 
-samples = 44100
-
-global_hull = np.array([])
-
-
-def update_hull(duration):
-    global global_hull
-    
-    global_hull = calculate_hull(hull_t_attack,
-                                 hull_t_decay,
-                                 hull_t_release,
-                                 hull_a_sustain,
-                                 duration)
-    return
-
-
-def calculate_hull(t_attack,
-                   t_decay,
-                   t_release,
-                   a_sustain,
-                   duration):
-    t_sustain = duration - t_attack - t_decay
-    if t_sustain < 0:
-        t_sustain = 0
-
-    # construct the hull curve
-    hull_attack  = np.linspace(0, 1, 
-                               num=samples * t_attack)
-    hull_decay   = np.linspace(1, a_sustain, 
-                               num = samples * t_decay)
-    hull_sustain = np.linspace(a_sustain, a_sustain, 
-                               num = samples * t_sustain)
-    hull_release = np.linspace(a_sustain, 0, num = 
-                               samples * t_release)
-    
-    new_hull = hull_attack
-    new_hull = np.append(new_hull, hull_decay)
-    new_hull = np.append(new_hull, hull_sustain)
-    new_hull = np.append(new_hull, hull_release)
-    
-    return new_hull
-
 
 class HullCurveControls(KnobPanelListener):
-    def __init__(self, knob_panel):
+    def __init__(self, 
+                 knob_panel,
+                 parameter_callback=None):
         super().__init__()
         self.kp = knob_panel
         self.kp.add_knob_value_listener(self)
+        
+        self.parameter_callback = parameter_callback
         
         # Hull curve parameters
         self.hull_t_attack  = 0.05    # time s
         self.hull_t_decay   = 0.10    # time s
         self.hull_t_release = 0.25    # time s
         self.hull_a_sustain = 0.90    # amplitude
-        
-        self.duration = 0.25
         
         # Knob to value mapping
         self.knob_map = np.linspace(0, 1.7, num=128)
@@ -142,13 +102,11 @@ class HullCurveControls(KnobPanelListener):
     
     
     def update_hull(self):
-        global global_hull
-        
-        global_hull = calculate_hull(self.hull_t_attack,
-                                     self.hull_t_decay,
-                                     self.hull_t_release,
-                                     self.hull_a_sustain,
-                                     self.duration)
+        if self.parameter_callback is not None:
+            self.parameter_callback(self.hull_t_attack,
+                                    self.hull_t_decay,
+                                    self.hull_t_release,
+                                    self.hull_a_sustain)
         return
     
     
@@ -220,7 +178,11 @@ class SineAudioprocessor(MidiMessageProcessorBase,
         
         self.sample_frequency = sample_frequency
         
-        self.hc = HullCurveControls(knob_panel)
+        self.duration = 0.25
+        self.hull = np.array([])
+        
+        self.hc = HullCurveControls(knob_panel,
+                                    parameter_callback=self.update_hull)
         self.wc = WaveControls(dispatch_panel)
         
         return
@@ -240,7 +202,7 @@ class SineAudioprocessor(MidiMessageProcessorBase,
     def play_note(self, note):
         freq = self.note2freq(note)
         
-        wave_output = self.genwave(freq) * global_hull
+        wave_output = self.genwave(freq) * self.hull
         
         wo.play(wave_output)
         
@@ -259,7 +221,7 @@ class SineAudioprocessor(MidiMessageProcessorBase,
     def genwave(self, f):
         w = 2 * np.pi * f
         
-        length = global_hull.size
+        length = self.hull.size
         
         t = np.linspace(0, w*length/self.sample_frequency, num=length)
         
@@ -274,6 +236,49 @@ class SineAudioprocessor(MidiMessageProcessorBase,
             wave = np.array([0]*length, dtype='float64')
         
         return wave
+    
+    
+    def update_hull(self,
+                    attack,
+                    decay,
+                    release,
+                    sustain):
+        self.hull = self.calculate_hull(attack,
+                                        decay,
+                                        release,
+                                        sustain,
+                                        self.duration)
+        return
+    
+    
+    def calculate_hull(self,
+                       t_attack,
+                       t_decay,
+                       t_release,
+                       a_sustain,
+                       duration):
+        t_sustain = duration - t_attack - t_decay
+        if t_sustain < 0:
+            t_sustain = 0
+        
+        samples = self.sample_frequency
+        
+        # construct the hull curve
+        hull_attack  = np.linspace(0, 1, 
+                                num=samples * t_attack)
+        hull_decay   = np.linspace(1, a_sustain, 
+                                num = samples * t_decay)
+        hull_sustain = np.linspace(a_sustain, a_sustain, 
+                                num = samples * t_sustain)
+        hull_release = np.linspace(a_sustain, 0, num = 
+                                samples * t_release)
+        
+        new_hull = hull_attack
+        new_hull = np.append(new_hull, hull_decay)
+        new_hull = np.append(new_hull, hull_sustain)
+        new_hull = np.append(new_hull, hull_release)
+        
+        return new_hull
 
 
 # kate: space-indent on; indent-width 4; mixedindent off; indent-mode python; indend-pasted-text false; remove-trailing-space off
