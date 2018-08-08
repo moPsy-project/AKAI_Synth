@@ -121,16 +121,24 @@ class HullCurveControls(KnobPanelListener):
 
 class WaveControls(DispatchPanelListener):
     NONE = 0
+    
+    # wave forms
     SINE = 1
     SAWTOOTH = 2
     SQUARE = 3
     
-    WAVECOLOR = [dispatchpanel.COL_OFF,
+    # operation modes
+    MUL = 1
+    ADD = 2
+    FOLD = 3
+    
+    MODECOLOR = [dispatchpanel.COL_OFF,
                  dispatchpanel.COL_GREEN,
                  dispatchpanel.COL_YELLOW,
                  dispatchpanel.COL_RED]
     
-    WAVENOTE = 23
+    WAVENOTES = [22, 23]
+    OPNOTE = 21
     
     def __init__(self, dispatch_panel):
         super().__init__()
@@ -138,7 +146,11 @@ class WaveControls(DispatchPanelListener):
         self.dp = dispatch_panel
         dispatch_panel.add_dispatch_panel_listener(self)
         
-        self.set_waveform(WaveControls.SINE)
+        self.waveform=[0,0]
+        self.set_waveform(WaveControls.SINE, 0)
+        self.set_waveform(WaveControls.NONE, 1)
+        
+        self.set_op_mode(WaveControls.MUL)
         
         return
     
@@ -146,25 +158,42 @@ class WaveControls(DispatchPanelListener):
     def process_button_pressed(self, note):
         print("note", note)
         
-        if note == 23:
+        if note in self.WAVENOTES:
+            idx = self.WAVENOTES.index(note)
             # set waveform
-            wf = self.waveform + 1
-            if wf >= len(WaveControls.WAVECOLOR):
+            wf = self.waveform[idx] + 1
+            if wf >= len(WaveControls.MODECOLOR):
                 wf = 0
-            self.set_waveform(wf)
+            self.set_waveform(wf, idx)
+        
+        if note == self.OPNOTE:
+            op = self.op_mode + 1
+            if op >= len(WaveControls.MODECOLOR):
+                op = 0
+            self.set_op_mode(op)
         
         return
     
     
-    def set_waveform(self, waveform):
-        self.waveform = waveform
-        self.dp.setColor(WaveControls.WAVENOTE,
-                         WaveControls.WAVECOLOR[self.waveform])
+    def set_waveform(self, waveform, idx=0):
+        self.waveform[idx] = waveform
+        self.dp.setColor(WaveControls.WAVENOTES[idx],
+                         WaveControls.MODECOLOR[waveform])
         return
     
     
-    def get_waveform(self):
-        return self.waveform
+    def get_waveform(self, idx=0):
+        return self.waveform[idx]
+    
+    
+    def set_op_mode(self, op_mode):
+        self.op_mode = op_mode
+        self.dp.setColor(WaveControls.OPNOTE,
+                         WaveControls.MODECOLOR[op_mode])
+    
+    
+    def get_op_mode(self):
+        return self.op_mode
 
 
 class SineAudioprocessor(MidiMessageProcessorBase,
@@ -202,7 +231,37 @@ class SineAudioprocessor(MidiMessageProcessorBase,
     def play_note(self, note):
         freq = self.note2freq(note)
         
-        wave_output = self.genwave(freq) * self.hull
+        # frequency multiplier for the second wave
+        fmul = 3/2
+        
+        op_mode = self.wc.get_op_mode()
+        
+        # generate base wave
+        if self.wc.get_waveform(0) == WaveControls.NONE:
+            wave0 = 1
+        else:
+            wave0 = self.genwave(freq, self.wc.get_waveform(0))
+        
+        # generate second wave, use wave0 as basewave in op mode FOLD
+        if self.wc.get_waveform(1) == WaveControls.NONE:
+            wave1 = 1
+        else:
+            basewave = wave0 if op_mode == WaveControls.FOLD else None
+            wave1 = self.genwave(freq*fmul, 
+                                 self.wc.get_waveform(1),
+                                 basewave)
+        
+        # combine the waves bases on op mode
+        if op_mode == WaveControls.MUL:
+            wave = wave0 * wave1
+        elif op_mode == WaveControls.ADD:
+            wave = wave0 + wave1
+        elif op_mode == WaveControls.FOLD:
+            wave = wave1
+        else:
+            wave = wave0
+        
+        wave_output = wave * self.hull
         
         wo.play(wave_output)
         
@@ -218,14 +277,16 @@ class SineAudioprocessor(MidiMessageProcessorBase,
         return SCALE_TONE_FREQUENCIES[step] * coeff
     
     
-    def genwave(self, f):
+    def genwave(self, f, waveform, basewave=None):
         w = 2 * np.pi * f
         
         length = self.hull.size
         
-        t = np.linspace(0, w*length/self.sample_frequency, num=length)
+        if basewave is None:
+            t = np.linspace(0, w*length/self.sample_frequency, num=length)
+        else:
+            t = basewave
         
-        waveform=self.wc.get_waveform()
         if waveform == WaveControls.SINE:
             wave = np.sin(t)
         elif waveform == WaveControls.SAWTOOTH:
