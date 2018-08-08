@@ -110,6 +110,7 @@ class HullCurveControls(KnobPanelListener):
         return
     
     
+    
     def process_knob_value_change(self, idx, value):
         # set the values according to Knob
         self.adapt_knob_values(idx, value)
@@ -117,6 +118,48 @@ class HullCurveControls(KnobPanelListener):
         self.update_hull()
         
         return
+
+
+class FrequencyControl(KnobPanelListener):
+    def __init__(self, 
+                 knob_panel):
+        super().__init__()
+        self.kp = knob_panel
+        self.kp.add_knob_value_listener(self)
+        
+        # frequency 
+        self.freqmul  = 3/2
+        
+        # Knob to value mapping
+        self.knob_map = np.linspace(1/64, 1, num=64)
+        self.knob_map = np.append(self.knob_map,
+                                  np.linspace(1, 16, num=64))
+        
+        # use the knob panel and observer mechanism to set the initial values
+        self.kp.set_target_value(1, 64) 
+        
+        return
+    
+    
+    def adapt_knob_values(self, idx, value):
+        # set the values according to Knob
+        
+        if idx == 1: #frequency multiplier
+            self.freqmul = self.knob_map[value]
+            print("Changed frequency multiplier to ", self.freqmul, ".");
+        
+        return
+    
+    
+    def process_knob_value_change(self, idx, value):
+        # set the values according to Knob
+        self.adapt_knob_values(idx, value)
+        
+        return
+    
+    
+    def get_freqmul(self):
+        return self.freqmul
 
 
 class WaveControls(DispatchPanelListener):
@@ -212,6 +255,7 @@ class SineAudioprocessor(MidiMessageProcessorBase,
         
         self.hc = HullCurveControls(knob_panel,
                                     parameter_callback=self.update_hull)
+        self.fc = FrequencyControl(knob_panel)
         self.wc = WaveControls(dispatch_panel)
         
         return
@@ -232,7 +276,7 @@ class SineAudioprocessor(MidiMessageProcessorBase,
         freq = self.note2freq(note)
         
         # frequency multiplier for the second wave
-        fmul = 3/2
+        fmul = self.fc.get_freqmul()
         
         op_mode = self.wc.get_op_mode()
         
