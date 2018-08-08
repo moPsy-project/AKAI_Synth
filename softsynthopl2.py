@@ -43,21 +43,10 @@ SCALE_TONE_FREQUENCIES = [
     493.883, # B
 ]
 
-
-def note2freq(note):
-    step = note % 12
-    
-    octave = note // 12
-    coeff = math.pow(2, octave - 4)
-    
-    return SCALE_TONE_FREQUENCIES[step] * coeff
-
-
-# Sample frequency
 samples = 44100
 
-
 global_hull = np.array([])
+
 
 def update_hull(duration):
     global global_hull
@@ -68,40 +57,6 @@ def update_hull(duration):
                                  hull_a_sustain,
                                  duration)
     return
-
-
-def playwave(f,
-             waveform = 1):
-    w = 2 * np.pi * f
-    
-    length = global_hull.size
-    
-    t = np.linspace(0, w*length/samples, num=length)
-    
-    
-    if waveform == 1: # SINE
-        wave = np.sin(t)
-    elif waveform == 2: # SAWTOOTH
-        wave = signal.sawtooth(t)
-    elif waveform == 3: # SQUARE
-        wave = signal.square(t)
-    else: # unknown waveform
-        wave = np.array([0]*length, dtype='float64')
-    
-    wave_output = wave*global_hull
-    
-    wo.play(wave_output)
-    
-    return
-
-
-def beep_on_note(note,
-                 waveform = 1):
-    freq = note2freq(note)
-    
-    playwave(freq, waveform=waveform)
-    
-    return;
 
 
 def calculate_hull(t_attack,
@@ -212,7 +167,8 @@ class WaveControls(DispatchPanelListener):
     SAWTOOTH = 2
     SQUARE = 3
     
-    WAVECOLOR = [dispatchpanel.COL_GREEN,
+    WAVECOLOR = [dispatchpanel.COL_OFF,
+                 dispatchpanel.COL_GREEN,
                  dispatchpanel.COL_YELLOW,
                  dispatchpanel.COL_RED]
     
@@ -235,8 +191,8 @@ class WaveControls(DispatchPanelListener):
         if note == 23:
             # set waveform
             wf = self.waveform + 1
-            if wf > len(WaveControls.WAVECOLOR):
-                wf = 1
+            if wf >= len(WaveControls.WAVECOLOR):
+                wf = 0
             self.set_waveform(wf)
         
         return
@@ -245,7 +201,7 @@ class WaveControls(DispatchPanelListener):
     def set_waveform(self, waveform):
         self.waveform = waveform
         self.dp.setColor(WaveControls.WAVENOTE,
-                         WaveControls.WAVECOLOR[self.waveform-1])
+                         WaveControls.WAVECOLOR[self.waveform])
         return
     
     
@@ -256,8 +212,13 @@ class WaveControls(DispatchPanelListener):
 class SineAudioprocessor(MidiMessageProcessorBase,
                          DispatchPanelListener):
     
-    def __init__(self, dispatch_panel, knob_panel):
+    def __init__(self, 
+                 dispatch_panel, 
+                 knob_panel,
+                 sample_frequency=44100):
         super().__init__()
+        
+        self.sample_frequency = sample_frequency
         
         self.hc = HullCurveControls(knob_panel)
         self.wc = WaveControls(dispatch_panel)
@@ -271,9 +232,48 @@ class SineAudioprocessor(MidiMessageProcessorBase,
     
     def process(self, msg):
         if msg.type=='note_on':
-            beep_on_note(msg.note, waveform=self.wc.get_waveform())
+            self.play_note(msg.note)
         
         return
+    
+    
+    def play_note(self, note):
+        freq = self.note2freq(note)
+        
+        wave_output = self.genwave(freq) * global_hull
+        
+        wo.play(wave_output)
+        
+        return
+    
+    
+    def note2freq(self, note):
+        step = note % 12
+        
+        octave = note // 12
+        coeff = math.pow(2, octave - 4)
+        
+        return SCALE_TONE_FREQUENCIES[step] * coeff
+    
+    
+    def genwave(self, f):
+        w = 2 * np.pi * f
+        
+        length = global_hull.size
+        
+        t = np.linspace(0, w*length/self.sample_frequency, num=length)
+        
+        waveform=self.wc.get_waveform()
+        if waveform == WaveControls.SINE:
+            wave = np.sin(t)
+        elif waveform == WaveControls.SAWTOOTH:
+            wave = signal.sawtooth(t)
+        elif waveform == WaveControls.SQUARE:
+            wave = signal.square(t)
+        else: # unknown waveform or NONE
+            wave = np.array([0]*length, dtype='float64')
+        
+        return wave
 
 
 # kate: space-indent on; indent-width 4; mixedindent off; indent-mode python; indend-pasted-text false; remove-trailing-space off
