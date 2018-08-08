@@ -127,15 +127,20 @@ class FrequencyControl(KnobPanelListener):
         self.kp = knob_panel
         self.kp.add_knob_value_listener(self)
         
-        # frequency 
-        self.freqmul  = 3/2
+        # Knob amplitude mapping
+        self.knob_amp_map = np.linspace(-0.9, 0, num=64)
+        self.knob_amp_map = np.append(self.knob_amp_map,
+                                  np.linspace(0, 0.9, num=64))
         
-        # Knob to value mapping
-        self.knob_map = np.linspace(1/64, 1, num=64)
-        self.knob_map = np.append(self.knob_map,
+        # Knob to frequency value mapping
+        self.knob_fmul_map = np.linspace(1/64, 1, num=64)
+        self.knob_fmul_map = np.append(self.knob_fmul_map,
                                   np.linspace(1, 16, num=64))
         
         # use the knob panel and observer mechanism to set the initial values
+        self.amp = [0.5, 0.5]
+        self.kp.set_target_value(0, 64)
+        self.freqmul = 1
         self.kp.set_target_value(1, 64) 
         
         return
@@ -144,8 +149,16 @@ class FrequencyControl(KnobPanelListener):
     def adapt_knob_values(self, idx, value):
         # set the values according to Knob
         
+        
+        if idx == 0: #amplitude distribution
+            v = self.knob_amp_map[value]
+            self.amp[0] = 1 - v
+            self.amp[1] = 1 + v
+            
+            print("Changed amplitudes to ", self.amp[0], "and", self.amp[1], ".");
+        
         if idx == 1: #frequency multiplier
-            self.freqmul = self.knob_map[value]
+            self.freqmul = self.knob_fmul_map[value]
             print("Changed frequency multiplier to ", self.freqmul, ".");
         
         return
@@ -156,6 +169,10 @@ class FrequencyControl(KnobPanelListener):
         self.adapt_knob_values(idx, value)
         
         return
+    
+    
+    def get_amp(self, idx):
+        return self.amp[idx]
     
     
     def get_freqmul(self):
@@ -275,6 +292,10 @@ class SineAudioprocessor(MidiMessageProcessorBase,
     def play_note(self, note):
         freq = self.note2freq(note)
         
+        # amplitudes
+        a0 = self.fc.get_amp(0)
+        a1 = a1 = self.fc.get_amp(1)
+        
         # frequency multiplier for the second wave
         fmul = self.fc.get_freqmul()
         
@@ -285,6 +306,8 @@ class SineAudioprocessor(MidiMessageProcessorBase,
             wave0 = 1
         else:
             wave0 = self.genwave(freq, self.wc.get_waveform(0))
+        # apply amplitude
+        wave0 *= a0
         
         # generate second wave, use wave0 as basewave in op mode FOLD
         if self.wc.get_waveform(1) == WaveControls.NONE:
@@ -294,12 +317,16 @@ class SineAudioprocessor(MidiMessageProcessorBase,
             wave1 = self.genwave(freq*fmul, 
                                  self.wc.get_waveform(1),
                                  basewave)
+        # apply amplitude
+        wave1 *= a1
         
         # combine the waves bases on op mode
         if op_mode == WaveControls.MUL:
             wave = wave0 * wave1
         elif op_mode == WaveControls.ADD:
             wave = wave0 + wave1
+            # normalize the amplitude
+            wave /= 2
         elif op_mode == WaveControls.FOLD:
             wave = wave1
         else:
