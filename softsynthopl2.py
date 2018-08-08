@@ -133,7 +133,7 @@ class FrequencyControl(KnobPanelListener):
                                   np.linspace(0, 0.9, num=64))
         
         # Knob to frequency value mapping
-        self.knob_fmul_map = np.linspace(1/64, 1, num=64)
+        self.knob_fmul_map = np.linspace(1/16, 1, num=64)
         self.knob_fmul_map = np.append(self.knob_fmul_map,
                                   np.linspace(1, 16, num=64))
         
@@ -208,9 +208,9 @@ class WaveControls(DispatchPanelListener):
         
         self.waveform=[0,0]
         self.set_waveform(WaveControls.SINE, 0)
-        self.set_waveform(WaveControls.NONE, 1)
+        self.set_waveform(WaveControls.SINE, 1)
         
-        self.set_op_mode(WaveControls.MUL)
+        self.set_op_mode(WaveControls.FOLD)
         
         return
     
@@ -301,24 +301,26 @@ class SineAudioprocessor(MidiMessageProcessorBase,
         
         op_mode = self.wc.get_op_mode()
         
-        # generate base wave
-        if self.wc.get_waveform(0) == WaveControls.NONE:
-            wave0 = 1
-        else:
-            wave0 = self.genwave(freq, self.wc.get_waveform(0))
-        # apply amplitude
-        wave0 *= a0
-        
         # generate second wave, use wave0 as basewave in op mode FOLD
         if self.wc.get_waveform(1) == WaveControls.NONE:
             wave1 = 1
         else:
-            basewave = wave0 if op_mode == WaveControls.FOLD else None
-            wave1 = self.genwave(freq*fmul, 
-                                 self.wc.get_waveform(1),
-                                 basewave)
+            wave1 = self.genwave(freq*fmul,
+                                 self.wc.get_waveform(1))
         # apply amplitude
         wave1 *= a1
+
+        # generate base wave
+        if self.wc.get_waveform(0) == WaveControls.NONE:
+            wave0 = 1
+        else:
+            basewave = wave1 if op_mode == WaveControls.FOLD else None
+            wave0 = self.genwave(freq, 
+                                 self.wc.get_waveform(0), 
+                                 basewave)
+        # apply amplitude
+        wave0 *= a0
+        
         
         # combine the waves bases on op mode
         if op_mode == WaveControls.MUL:
@@ -328,7 +330,7 @@ class SineAudioprocessor(MidiMessageProcessorBase,
             # normalize the amplitude
             wave /= 2
         elif op_mode == WaveControls.FOLD:
-            wave = wave1
+            wave = wave0
         else:
             wave = wave0
         
@@ -353,10 +355,11 @@ class SineAudioprocessor(MidiMessageProcessorBase,
         
         length = self.hull.size
         
-        if basewave is None:
-            t = np.linspace(0, w*length/self.sample_frequency, num=length)
-        else:
-            t = basewave
+        
+        t = np.linspace(0, w*length/self.sample_frequency, num=length)
+
+        if basewave is not None:
+            t += basewave
         
         if waveform == WaveControls.SINE:
             wave = np.sin(t)
