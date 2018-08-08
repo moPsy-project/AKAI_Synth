@@ -71,12 +71,10 @@ if __name__ == '__main__':
     dp = DispatchPanel(apc_out)
     kp = KnobPanel(dp)
     
-    processors.append(SineAudioprocessor(dp))
+    processors.append(SineAudioprocessor(dp, kp))
     processors.append(KnobColorProcessor(apc_out))
     processors.append(dp)
     processors.append(kp)
-    
-    hc = HullCurveControls(kp)
     
     outport = mido.open_output()
     

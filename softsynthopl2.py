@@ -206,9 +206,8 @@ class HullCurveControls(KnobPanelListener):
         return
 
 
-class SineAudioprocessor(MidiMessageProcessorBase,
-                         DispatchPanelListener):
-    
+class WaveControls(DispatchPanelListener):
+    NONE = 0
     SINE = 1
     SAWTOOTH = 2
     SQUARE = 3
@@ -225,18 +224,7 @@ class SineAudioprocessor(MidiMessageProcessorBase,
         self.dp = dispatch_panel
         dispatch_panel.add_dispatch_panel_listener(self)
         
-        self.set_waveform(SineAudioprocessor.SINE)
-        
-        return
-    
-    
-    def match(self, msg):
-        return (msg.type=='note_on' or msg.type=='note_off') and msg.channel==1
-    
-    
-    def process(self, msg):
-        if msg.type=='note_on':
-            beep_on_note(msg.note, waveform=self.waveform)
+        self.set_waveform(WaveControls.SINE)
         
         return
     
@@ -247,7 +235,7 @@ class SineAudioprocessor(MidiMessageProcessorBase,
         if note == 23:
             # set waveform
             wf = self.waveform + 1
-            if wf > len(SineAudioprocessor.WAVECOLOR):
+            if wf > len(WaveControls.WAVECOLOR):
                 wf = 1
             self.set_waveform(wf)
         
@@ -256,11 +244,36 @@ class SineAudioprocessor(MidiMessageProcessorBase,
     
     def set_waveform(self, waveform):
         self.waveform = waveform
-        self.dp.setColor(SineAudioprocessor.WAVENOTE,
-                         SineAudioprocessor.WAVECOLOR[self.waveform-1])
+        self.dp.setColor(WaveControls.WAVENOTE,
+                         WaveControls.WAVECOLOR[self.waveform-1])
         return
+    
+    
+    def get_waveform(self):
+        return self.waveform
 
 
+class SineAudioprocessor(MidiMessageProcessorBase,
+                         DispatchPanelListener):
+    
+    def __init__(self, dispatch_panel, knob_panel):
+        super().__init__()
+        
+        self.hc = HullCurveControls(knob_panel)
+        self.wc = WaveControls(dispatch_panel)
+        
+        return
+    
+    
+    def match(self, msg):
+        return (msg.type=='note_on' or msg.type=='note_off') and msg.channel==1
+    
+    
+    def process(self, msg):
+        if msg.type=='note_on':
+            beep_on_note(msg.note, waveform=self.wc.get_waveform())
+        
+        return
 
 
 # kate: space-indent on; indent-width 4; mixedindent off; indent-mode python; indend-pasted-text false; remove-trailing-space off
