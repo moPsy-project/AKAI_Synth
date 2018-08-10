@@ -14,7 +14,6 @@ import math
 import numpy as np
 from scipy import signal
 
-
 # local modules
 from midiproc import MidiMessageProcessorBase
 from knobpanel import KnobPanelListener
@@ -42,6 +41,97 @@ SCALE_TONE_FREQUENCIES = [
     466.164, # A#4, Bb4
     493.883, # B
 ]
+
+class FixedWaveSequencer(WaveSource):
+    """Sequence a fixed wave once"""
+    def __init__(self,
+                 samples,
+                 blocksize,
+                 loop_once=False):
+        super(FixedWaveSequencer, 
+              self).__init__(blocksize=blocksize)
+        
+        self.samples = np.array(samples)
+        
+        self.idx = 0
+        
+        return
+    
+    
+    # Note: using python generators sample-wise is too slow!!
+    def get(self):
+        """return the next self.blocksize samples"""
+        
+        wave = np.array([], dtype='float64')
+        
+        if self.idx < len(self.samples):
+            e = self.idx + self.get_blocksize()
+            if e > len(self.samples):
+                e = len(self.samples)
+            wave = np.append(wave, self.samples[self.idx:e])
+            self.idx = e
+        
+        # calculate remaining samples
+        remain = self.get_blocksize() - len(wave)
+        
+        if remain > 0:
+            # fill with silence
+            wave = np.append(wave,
+                             np.array([0] * remain, dtype='float64'))
+        
+        return wave
+    
+    
+    def finished(self):
+        """State if the sequencer is done with its samples"""
+        return self.idx >= len(self.samples)
+
+
+class FixedWaveLoopSequencer(WaveSource):
+    """Loop through a fixed wave"""
+    def __init__(self,
+                 samples,
+                 blocksize):
+        super(FixedWaveLoopSequencer, 
+              self).__init__(blocksize=blocksize)
+        
+        self.samples = np.array(samples)
+        
+        # repeat samples to at least match the block size,
+        # so that there is at most one wrap-around during get
+        while len(self.samples) < self.get_blocksize():
+            self.samples = np.append(self.samples,
+                                     samples)
+        
+        self.idx = 0
+        
+        return
+    
+    
+    # Note: using python generators sample-wise is too slow!!
+    def get(self):
+        """return the next self.blocksize samples"""
+        
+        wave = np.array([], dtype='float64')
+        
+        # add up tp blocksize samples to the wave, if available
+        e = self.idx + self.get_blocksize()
+        if e > len(self.samples):
+            e = len(self.samples)
+        wave = np.append(wave, self.samples[self.idx:e])
+        self.idx = e
+        
+        # calculate remaining samples
+        remain = self.get_blocksize() - len(wave)
+        
+        if remain > 0:
+            # remain is guaranteed to be < len(samples)
+            wave = np.append(wave,
+                             self.samples[0:remain])
+            # update index
+            self.idx = remain
+        
+        return wave
 
 
 class HullCurveControls(KnobPanelListener):
@@ -334,7 +424,7 @@ class SineAudioprocessor(MidiMessageProcessorBase,
         else:
             wave = wave0
         
-        wave_output = wave * self.hull
+        wave_output = wave
         
         # only play if the result is an actual ndarray
         if isinstance(wave, np.ndarray):
@@ -352,16 +442,10 @@ class SineAudioprocessor(MidiMessageProcessorBase,
         return SCALE_TONE_FREQUENCIES[step] * coeff
     
     
-    def genwave(self, f, waveform, basewave=None):
+    def wave_generator(self, f, waveform):
+        # one period on the chosen frequency
         w = 2 * np.pi * f
-        
-        length = self.hull.size
-        
-        
-        t = np.linspace(0, w*length/self.sample_frequency, num=length)
-
-        if basewave is not None:
-            t += basewave
+        t = np.linspace(0, 2 * np.pi, num=self.sample_frequency // f)
         
         if waveform == WaveControls.SINE:
             wave = np.sin(t)
@@ -370,9 +454,26 @@ class SineAudioprocessor(MidiMessageProcessorBase,
         elif waveform == WaveControls.SQUARE:
             wave = signal.square(t)
         else: # unknown waveform or NONE
-            wave = np.array([0]*length, dtype='float64')
+            wave = np.array([0], dtype='float64')
         
-        return wave
+        gen = FixedWaveLoopSequencer(wave, 411)
+        
+        return gen
+    
+    
+    def genwave(self, f, waveform, basewave=None):
+        length = len(self.hull)
+        hgen = FixedWaveSequencer(self.hull, 411)
+        
+        gen = self.wave_generator(f, waveform)
+        
+        wave = np.array([], dtype='float64')
+        hull = np.array([], dtype='float64')
+        while len(wave) < length:
+            wave = np.append(wave, gen.get())
+            hull = np.append(hull, hgen.get())
+        
+        return hull * wave
     
     def update_hull(self,
                     attack,
