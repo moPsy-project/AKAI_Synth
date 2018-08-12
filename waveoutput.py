@@ -15,9 +15,10 @@ import threading
 import asyncio
 
 class ChannelQueue:
-    # the empty_callback gets the channel number as argument
+    # the *_callback gets the channel number as argument
     def __init__(self, 
                  channel_number=0,
+                 last_callback=None,
                  empty_callback=None):
         super().__init__()
         
@@ -148,15 +149,21 @@ class ChannelQueue:
         
     def _next(self):
         """Take next sample array from the queue"""
+        empty = False
         self._lock()
         
-        try:
+        if self.sample_queue.empty():
+            self.current = None
+            empty = True
+        else:
             self.current = self.sample_queue.get_nowait()
             self.index = 0
-        except asyncio.QueueEmpty:
-            self.current = None
         
         self._release()
+        
+        if empty and self.last_callback is not None:
+            self.last_callback(self.channel_number)
+        
         return self.current
 
 
