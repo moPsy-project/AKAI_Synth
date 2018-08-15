@@ -251,7 +251,7 @@ class WaveOutput:
         self.channel_lock.acquire()
 
         c = 0
-        if c == 0:
+        if channel == 0:
             c = self._find_free_channel()
         else:
             c = channel-1
