@@ -11,6 +11,7 @@ import mido
 import sounddevice
 
 import math
+import copy
 import numpy as np
 from scipy import signal
 
@@ -132,6 +133,411 @@ class FixedWaveLoopSequencer(WaveSource):
             self.idx = remain
         
         return wave
+
+
+class EnvelopeParameters:
+    """Parameters for wave envelope"""
+    
+    def __init__(self):
+        super().__init__()
+        
+        # Attach time in ms
+        self.attack = 0
+        
+        # Decay time in ms
+        self.decay = 0
+        
+        # Sustain niveau in % of attack amplitude
+        self.sustain = 0
+        
+        # Release time  in ms
+        self.release = 0
+        
+        # True if note can be sustained
+        self.hold = False
+        
+        return
+    
+    
+    def get_attack(self):
+        return self.attack
+    
+    
+    def set_attack(self, value):
+        old = self.attack
+        self.attack = value
+        return old
+    
+    
+    def get_decay(self):
+        return self.decay
+    
+    
+    def set_decay(self, value):
+        old = self.decay
+        self.decay = value
+        return old
+    
+    
+    def get_sustain(self):
+        return self.sustain
+    
+    
+    def set_sustain(self, value):
+        old = self.sustain
+        self.sustain = value
+        return old
+    
+    
+    def get_release(self):
+        return self.release
+    
+    
+    def set_release(self, value):
+        old = self.release
+        self.release = value
+        return old
+    
+    
+    def is_hold(self):
+        return self.hold
+    
+    
+    def set_hold(self, value):
+        old = self.hold
+        self.hold = value
+        return old
+
+
+class EnvelopeState:
+    def __init__(self):
+        self.phase = EnvelopeSequencer.PHASE_INIT
+        self.idx = 0
+        self.struck = False
+        self.released = True
+        
+        self.amp = 0
+        
+        return
+
+
+class EnvelopeSequencer(WaveSource):
+    PHASE_INIT = 0
+    PHASE_ATTACK = 1
+    PHASE_DECAY = 2
+    PHASE_SUSTAIN = 3
+    PHASE_RELEASE = 4
+    PHASE_TUNEDOWN = 5
+    PHASE_DONE = 6
+    
+    
+    def __init__(self,
+                 generator,
+                 blocksize = 441,
+                 samplerate = 44100,
+                 phase_callback = None,
+                 done_callback = None):
+        super(EnvelopeSequencer, 
+              self).__init__(blocksize=blocksize,
+                             samplerate=samplerate,
+                             done_callback=done_callback)
+        
+        self.generator = generator
+        self.phase_callback = phase_callback
+        
+        self.state = EnvelopeState()
+        
+        return
+    
+    
+    def __del__(self):
+        pass
+    
+    
+    def get(self):
+        fragment = None
+        
+        if self.generator is None:
+            fragement = np.array([], dtype='float64')
+        else:
+            # store old state
+            _state = copy.deepcopy(self.state)
+            
+            fragment = self.generator.generate(self.state, self.get_blocksize())
+            
+            # handle the strike flag
+            if self.state.struck == True:
+                if self.state.phase not in [EnvelopeSequencer.PHASE_INIT,
+                                      EnvelopeSequencer.PHASE_DONE]:
+                    #print(fragment)
+                    r = int(self.get_samplerate() * 0.007)
+                    if r > self.get_blocksize():
+                        r = self.get_blocksize()
+                    
+                    fragment = np.append(np.linspace(fragment[0], 0, num=r), [0]*(self.get_blocksize()-r))
+                    
+                    
+                    print("setting linspace from {0} to {1}".format(fragment[0], fragment[-1]))
+                    #print(fragment)
+
+                self.state.phase = EnvelopeSequencer.PHASE_ATTACK
+                self.state.idx = 0
+                self.state.released = False
+            
+                # reset the strike flag
+                self.state.struck = False
+                
+            
+            # handle callbacks
+            if _state.phase != self.state.phase:
+                if self.phase_callback is not None:
+                    self.phase_callback(self, _state.phase, self.state.phase)
+                    
+                if self.state.phase == EnvelopeSequencer.PHASE_DONE:
+                    self.done()
+        
+        if len(fragment) != self.get_blocksize():
+            print("FRAGMENT LENGTH MISMATCH:", len(fragment))
+        return fragment
+    
+    
+    def reset(self):
+        self.state.phase = EnvelopeSequencer.PHASE_INIT
+        self.state.idx = 0
+        
+        return
+    
+    
+    def strike(self):
+        self.state.struck = True
+        
+        return
+    
+    
+    def release(self):
+        self.state.released = True
+        
+        return
+    
+    
+    def tunedown(self):
+        self.state.phase = EnvelopeSequencer.PHASE_TUNEDOWN
+    
+    
+    def is_finished(self):
+        return self.state.phase == EnvelopeSequencer.PHASE_DONE
+
+
+class EnvelopeGenerator:
+    def __init__(self,
+                 samplerate = 44100,
+                 parameter_callback = None):
+        super().__init__()
+        self.samplerate = samplerate
+        self.parameter_callback = parameter_callback
+        
+        self.set_parameters(EnvelopeParameters())
+        
+        self.env_strike = None
+        self.env_release = None
+        
+        return
+    
+    
+    def __del__(self):
+        pass
+    
+    
+    def get_parameters(self):
+        return self.p
+    
+    
+    def set_parameters(self, parameters):
+        self.p = parameters
+        
+        self.cache_attack = np.array([], dtype='float64')
+        self.cache_decay = np.array([], dtype='float64')
+        self.cache_release = np.array([], dtype='float64')
+        
+        return
+        
+        
+    def generate(self,
+                 state,
+                 blocksize):
+        n_attack = math.ceil(self.samplerate * self.p.get_attack())
+        n_decay = math.ceil(self.samplerate *  self.p.get_decay())
+        n_release = math.ceil(self.samplerate * self.p.get_release())
+        
+        wave = np.array([], dtype='float64')
+        
+        # Init phase is handled together with the Done phase
+        # Intermediate phase transitions do not have an effect here,
+        # as the index idx is not moved, except when all envelope 
+        # parameters are zero, then we transistion to Done (which 
+        # still would not make a difference.
+        
+        
+        # Handle Attack phase
+        if state.phase == EnvelopeSequencer.PHASE_ATTACK:
+            wave, self.cache_attack, state.idx = self._append_env_fragment(
+                             wave, self.cache_attack,
+                             n_attack, state.idx,
+                             0, 1,
+                             blocksize)
+        
+            # Check phase transition
+            if state.idx == n_attack:
+                state.phase = EnvelopeSequencer.PHASE_DECAY
+                state.idx = 0
+        
+        # Handle Decay phase
+        if state.phase == EnvelopeSequencer.PHASE_DECAY:
+            wave, self.cache_decay, state.idx = self._append_env_fragment(
+                             wave, self.cache_decay,
+                             n_decay, state.idx,
+                             1, self.p.get_sustain(),
+                             blocksize)
+        
+            # Check phase transistion
+            if state.idx == n_decay:
+                state.phase = EnvelopeSequencer.PHASE_SUSTAIN if self.p.is_hold() else EnvelopeSequencer.PHASE_RELEASE
+                state.idx = 0
+        
+        # Stustain phase
+        if state.phase == EnvelopeSequencer.PHASE_SUSTAIN:
+            # pad with the sustain value
+            
+            # use a linear space so that in-process changes of the amplitude to not create cracks
+            _fragment = np.linspace(state.amp,
+                                    self.p.get_sustain(),
+                                    blocksize - len(wave))
+            wave = np.append(wave, _fragment)
+            
+            # index does not matter here
+            
+            # Check phase transition
+            if state.released == True:
+                state.phase = EnvelopeSequencer.PHASE_RELEASE
+        
+            # this phase can only be left via outside intervention
+        
+        # Release phase
+        if state.phase == EnvelopeSequencer.PHASE_RELEASE:
+            wave, self.cache_release, state.idx = self._append_env_fragment(
+                             wave, self.cache_release,
+                             n_release, state.idx,
+                             self.p.get_sustain(), 0,
+                             blocksize)
+        
+            # Check phase transistion
+            if state.idx == n_release:
+                state.phase = EnvelopeSequencer.PHASE_TUNEDOWN
+                state.idx = 0
+        
+        # Tunedown phase
+        if state.phase == EnvelopeSequencer.PHASE_TUNEDOWN:
+            # complete tunedown in 7 ms
+            loss = 1/7
+            
+            # calculate loss per sample
+            samples_p_ms = self.samplerate / 1000
+            loss_per_sample = loss / samples_p_ms
+            
+            # how many samples to tune down?
+            td_samples = math.ceil(state.amp / loss_per_sample)
+            
+            # calculate fragment length within remaining block
+            fragment_length = blocksize-len(wave)
+            
+            if td_samples > fragment_length:
+                td_samples = fragment_length
+            
+            a1 = state.amp
+            a2 = state.amp - (loss_per_sample * td_samples)
+            if a2 < 0:
+                a2 = 0
+            
+            _fragment = np.linspace(a1, a2, num=td_samples)
+            wave = np.append(wave, _fragment)
+
+            # Check phase transition
+            if a2 == 0:
+                state.phase = EnvelopeSequencer.PHASE_DONE
+
+        # Init or Done Phase
+        if state.phase in [EnvelopeSequencer.PHASE_INIT, EnvelopeSequencer.PHASE_DONE]:
+            # pad with silence
+            _fragment = [0] * (blocksize - len(wave))
+            wave = np.append(wave, _fragment)
+            
+            # index does not matter here
+        
+        # these phases can only be left via outside intervention
+        
+        # store the last generated amplitude
+        state.amp = wave[-1]
+        
+        return wave
+    
+    
+    def min_envelope_samples(self):
+        # duplicate the calculation from gen!
+        return math.ceil(self.samplerate * self.p.get_attack()) + math.ceil(self.samplerate * self.p.get_decay()) + math.ceil(self.samplerate * self.p.get_release())
+    
+    
+    def _append_env_fragment(self,
+                             wave, cache,
+                             num, idx,
+                             val_start, val_end,
+                             blocksize):
+        
+        # choose end index based on samples left over
+        _end = idx + blocksize - len(wave)
+        if _end > num:
+            _end = num
+        
+        # check cache
+        if len(cache) < _end:
+            _f = self._calculate_env_fragment(val_start, val_end,
+                                              num,
+                                              len(cache) - 1, _end)
+            cache = np.append(cache, _f)
+
+        _fragment = cache[idx:_end]
+        
+        if len(wave) > 0:
+            wave = np.append(wave, _fragment)
+        else:
+            wave = _fragment
+        
+        idx = _end
+        
+        return [wave, cache, idx]
+    
+    
+    def _calculate_env_fragment(self,
+                                val_start, val_end,
+                                num,  # length of whole segment
+                                idx_start, idx_end):
+        if idx_start > idx_end:
+            raise ValueError("Start index must not be greater than end index!")
+        
+        if num < 0:
+            raise ValueError("Segment length num must not be lower than zero!")
+        
+        if idx_start == idx_end or num == 0:
+            return np.array([], dtype='float64')
+        
+        _tangent = (val_end - val_start) / num
+        _a = val_start + _tangent * idx_start
+        _b = val_start + _tangent * idx_end
+        
+        #_a, _b = np.interp([idx_start, idx_end],
+        #                   [0, num], [val_start, val_end])
+        
+        return np.linspace(_a, _b,
+                           num = idx_end - idx_start)
 
 
 class HullCurveControls(KnobPanelListener):
