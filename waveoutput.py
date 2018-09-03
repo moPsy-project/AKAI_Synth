@@ -58,6 +58,10 @@ class ChannelQueue:
     
     def enqueue(self, wave):
         """Enqueue waveform array to play list"""
+        
+        if not isinstance(wave, np.ndarray):
+            raise ValueError("Wave of type {0} is not a numpy ndarray!".format(type(wave)))
+        
         self._lock()
         
         # Raises QueueFull if no slot is available
