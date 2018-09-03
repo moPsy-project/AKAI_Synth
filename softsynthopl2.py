@@ -336,7 +336,9 @@ class SineAudioprocessor(MidiMessageProcessorBase,
         
         wave_output = wave * self.hull
         
-        wo.play(wave_output)
+        # only play if the result is an actual ndarray
+        if isinstance(wave, np.ndarray):
+            wo.play(wave_output)
         
         return
     
@@ -371,7 +373,6 @@ class SineAudioprocessor(MidiMessageProcessorBase,
             wave = np.array([0]*length, dtype='float64')
         
         return wave
-    
     
     def update_hull(self,
                     attack,
