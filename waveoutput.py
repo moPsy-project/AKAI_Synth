@@ -225,7 +225,8 @@ class WaveOutput:
         self.ch = []
         for i in range(1, channels+1):
             self.ch.append(
-                ChannelQueue(channel_number = i,
+                ChannelQueue(chid = i,
+                             blocksize=441,
                              empty_callback = self.channel_empty_callback))
         
         return
@@ -367,7 +368,7 @@ class WaveOutput:
         output = np.array([0]*self.blocksize, dtype='float64')
         
         for i in self.order:
-            output += self.ch[i-1].get(self.blocksize, pad=True)
+            output += self.ch[i-1].get()
             
         output /= self.channels
         
