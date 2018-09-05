@@ -14,6 +14,40 @@ import numpy as np
 import threading
 import asyncio
 
+class WaveSource:
+    def __init__(self,
+                 chid=None,
+                 samplerate=None,
+                 blocksize=None,
+                 done_callback=None):
+        self.chid = chid
+        self.samplerate = samplerate
+        self.blocksize = blocksize
+        self.done_callback = done_callback
+    
+    
+    def get_chid(self):
+        return self.chid
+    
+    
+    def get_samplerate(self):
+        return self.samplerate
+    
+    
+    def get_blocksize(self):
+        return self.blocksize
+    
+    
+    def done(self):
+        if self.done_callback is not None:
+            self.done_callback(self.get_chid())
+        return
+    
+    
+    def get(self):
+        pass
+
+
 class ChannelQueue:
     # the *_callback gets the channel number as argument
     def __init__(self, 
