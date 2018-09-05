@@ -220,7 +220,7 @@ class WaveOutput:
         ch = 0
         
         # try an unused channel
-        unused = [c for c in range(0, self.channels) if c not in self.order]
+        unused = [c for c in range(1, self.channels+1) if c not in self.order]
         
         if len(unused) > 0:
             ch = unused[0]
@@ -230,7 +230,55 @@ class WaveOutput:
         
         self.channel_lock.release()
         return ch
+    
+    
+    def reserve_channel(self, 
+                        ch=None):
+        self._check_channel_arg(ch)
+        self.channel_lock.acquire()
+
+        result = None
         
+        
+        if ch is None:
+            result = self._find_free_channel()
+        elif is_available_channel(ch):
+            result = ch
+        
+        if result is not None:
+            self._put_ch_to_order(result)
+
+        
+        self.channel_lock.release()
+        return result
+    
+    
+    def release_channel(self,
+                        ch):
+        self._check_channel_arg(ch)
+        
+        self._remove_ch_from_order(ch)
+        
+        return
+    
+    
+    def is_available_channel(self,
+                             ch):
+        self._check_channel_arg(ch)
+        self.channel_lock.acquire()
+        
+        result = ch is None or ch in self.ch
+        
+        self.channel_lock.release()
+        return result
+    
+    
+    def _check_channel_arg(self, ch):
+        if ch is not None and (ch < 1 or ch > self.channels):
+            raise ValueError("Channel number must between 1 and the configured bounds({0}): {1}".format(self.channels, ch))
+        
+        return
+    
     
     def start(self):
         self.stream = sounddevice.OutputStream(
@@ -255,31 +303,21 @@ class WaveOutput:
     
     def play(self,
              wave,
-             channel=0,
+             channel=None,
              replace=True):
 
-        # take the channel that has been used last
-        self.channel_lock.acquire()
-
-        c = 0
-        if channel == 0:
-            c = self._find_free_channel()
-        else:
-            c = channel-1
-        self._put_ch_to_order(c)
-            
-        self.channel_lock.release()
+        c = self.reserve_channel()
         
         if replace:
-            self.ch[c].replace(wave, blocksize=self.blocksize)
+            self.ch[c-1].replace(wave, blocksize=self.blocksize)
         else:
-            self.ch[c].enqueue(wave)
+            self.ch[c-1].enqueue(wave)
         
         return c
     
     
     def channel_empty_callback(self, channel_number):
-        self._put_ch_to_order(channel_number-1)
+        self.release_channel(channel_number)
         
         if self.empty_callback is not None:
             self.empty_callback(channel_number)
@@ -294,7 +332,7 @@ class WaveOutput:
         output = np.array([0]*self.blocksize, dtype='float64')
         
         for i in self.order:
-            output += self.ch[i].get(self.blocksize, pad=True)
+            output += self.ch[i-1].get(self.blocksize, pad=True)
             
         output /= self.channels
         
