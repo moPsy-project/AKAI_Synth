@@ -752,6 +752,167 @@ class WaveControls(DispatchPanelListener):
         return self.op_mode
 
 
+class Cell(WaveSource):
+    # wave forms
+    WAVE_OFF = 0
+    WAVE_SINE = 1
+    WAVE_SAWTOOTH = 2
+    WAVE_SQUARE = 3
+    
+    
+    def __init__(self,
+                 chid=None,
+                 modulator = None,
+                 samplerate = 44100,
+                 blocksize = 441,
+                 done_callback = None):
+        super(Cell, self).__init__(chid=chid,
+                                   samplerate=samplerate,
+                                   blocksize=blocksize,
+                                   done_callback=done_callback)
+        #setting the modulator enables frequency modulation
+        self.modulator = modulator
+        
+        self.waveform = None
+        self.frequency = None
+        self.midx = 1    # modulation index
+        
+        self.envelope = EnvelopeGenerator(self.get_samplerate())
+        
+        
+        self.env_gen = EnvelopeSequencer(self.envelope, 
+                                         self.get_blocksize(),
+                                         self.get_samplerate(),
+                                         None,
+                                         self._seq_done_callback)
+        self.wave_gen = None
+        
+        return
+    
+    
+    def set_envelope(self, p):
+        if not isinstance(p, EnvelopeParameters):
+            raise ValueError("EnvelopeParameters expected!")
+        
+        self.envelope.set_parameters(p)
+        
+        return
+    
+    
+    def set_frequency(self, f):
+        self.frequency = f
+        
+        self._update_wavegen()
+
+        return
+    
+    
+    def set_waveform(self, waveform):
+        self.waveform = waveform
+        
+        self._update_wavegen()
+        
+        return
+    
+    
+    def set_modulator(self, modulator):
+        self.modulator = modulator
+        
+        self._update_wavegen()
+        
+        return
+    
+    
+    def set_midx(self, midx):
+        self.midx = 1 if midx is None else midx
+        
+        return
+    
+    
+    def _update_wavegen(self):
+        if self.frequency is None:
+            return None
+        
+        # one period on the chosen frequency
+        w = 2 * np.pi * self.frequency
+        t = np.linspace(0, 2 * np.pi, 
+                        num=self.get_samplerate() // self.frequency)
+        
+        if self.modulator is not None:
+           # When there is a modulator, this is the stored wave
+            wave = t
+        else:
+            wave = self._generate_wave(t)
+        
+        self.wave_gen = FixedWaveLoopSequencer(wave, 
+                                               self.get_blocksize())
+        
+        return
+    
+    
+    def _generate_wave(self, base):
+        if base is None:
+            return None
+        
+        if self.waveform == self.WAVE_SINE:
+            wave = np.sin(base)
+        elif self.waveform == self.WAVE_SAWTOOTH:
+            wave = signal.sawtooth(base)
+        elif self.waveform == self.WAVE_SQUARE:
+            wave = signal.square(base)
+        else: # unknown waveform or NONE
+            l = 1 if base is None else len(base)
+            wave = np.array([0]*l, dtype='float64')
+        
+        return wave
+    
+    
+    def strike(self):
+        self.env_gen.strike()
+        
+        return
+    
+    
+    def release(self):
+        self.env_gen.release()
+        
+        return
+    
+    
+    def tunedown(self):
+        self.env_gen.tunedown()
+    
+    
+    def stop(self):
+        self.env_gen.reset()
+        
+        return
+    
+    
+    def get(self):
+        wave = None
+        
+        if self.wave_gen is not None:
+            if self.modulator is None:
+                wave = self.wave_gen.get()
+            else:
+                t = self.wave_gen.get()
+                mod = self.modulator.get()
+                wave = self._generate_wave(t+self.midx*mod)
+            
+            wave *= self.env_gen.get()
+        else:
+            wave = np.array([0]*self.get_blocksize(), dtype='float64')
+        
+        return wave
+    
+    
+    def _seq_done_callback(self, seq):
+        self.done()
+        
+        return
+
+
 class SineAudioprocessor(MidiMessageProcessorBase,
                          DispatchPanelListener):
     
