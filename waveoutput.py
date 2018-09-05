@@ -48,13 +48,17 @@ class WaveSource:
         pass
 
 
-class ChannelQueue:
+class ChannelQueue(WaveSource):
     # the *_callback gets the channel number as argument
     def __init__(self, 
-                 channel_number=0,
+                 blocksize=441,
+                 chid=0,
                  last_callback=None,
                  empty_callback=None):
-        super().__init__()
+        super(ChannelQueue,self).__init__(chid,
+                                          None,
+                                          blocksize,
+                                          empty_callback)
         
         self.channel_lock = threading.RLock()
         
@@ -63,13 +67,8 @@ class ChannelQueue:
         self.index = 0
 
         # this is an arbitrary number which is passed to callback functions
-        self.channel_number = channel_number
-        self.empty_callback = empty_callback
+        self.last_callback = last_callback
         return
-    
-    
-    def get_channel_number(self):
-        return self.channel_number()
     
     
     def _lock(self):
@@ -106,14 +105,14 @@ class ChannelQueue:
         return
     
     
-    def stop(self, blocksize=0):
+    def stop(self):
         """Stop emitting samples, graceful with blocksize"""
         self._lock()
         
         # clear current sample or replace by smoothing
-        if (blocksize > 0) and (not self.empty()):
-            stop_hull = np.linspace(1.0, 0.0, num=blocksize)
-            self.current = self.get(blocksize, pad=True) * stop_hull
+        if (self.get_blocksize() > 0) and (not self.empty()):
+            stop_hull = np.linspace(1.0, 0.0, num=self.get_blocksize())
+            self.current = self.get() * stop_hull
             self.index = 0
         else:
             self.current = None
@@ -133,22 +132,21 @@ class ChannelQueue:
         """Replace current queue with new samples, maybe graceful"""
         self._lock()
         
-        self.stop(blocksize)
+        self.stop()
         self.enqueue(wave)
         
         self._release()
         return
     
     
-    def get(self, blocksize, pad=False):
-        """Get blocksize samples from the channel, can pad with zero"""
+    def get(self):
         self._lock()
         
         samples = np.array([])
         
         # fill the samples until we've run out
-        while (not self.empty()) and len(samples) < blocksize:
-            count = blocksize - len(samples)
+        while (not self.empty()) and len(samples) < self.get_blocksize():
+            count = self.get_blocksize() - len(samples)
             
             # check if next queued array must be used
             if self.current is None:
@@ -168,13 +166,13 @@ class ChannelQueue:
                 if self.index >= len(self.current):
                     self.current = None
                     # callback if empty
-                    if (self.empty_callback is not None) and self.empty():
-                        self.empty_callback(self.channel_number)
+                    if self.empty():
+                        self.done()
         
         # padding
-        if pad and len(samples) < blocksize:
+        if len(samples) < self.get_blocksize():
             samples = np.append(samples, 
-                                [0] * (blocksize - len(samples)))
+                                [0] * (self.get_blocksize() - len(samples)))
         
         
         self._release()
@@ -186,17 +184,20 @@ class ChannelQueue:
         empty = False
         self._lock()
         
+        last = False
+        
         if self.sample_queue.empty():
             self.current = None
             empty = True
         else:
             self.current = self.sample_queue.get_nowait()
             self.index = 0
-        
+            last = self.sample_queue.empty()
+            
         self._release()
         
-        if empty and self.last_callback is not None:
-            self.last_callback(self.channel_number)
+        if  last and self.last_callback is not None:
+            self.last_callback(self.get_chid())
         
         return self.current
 
