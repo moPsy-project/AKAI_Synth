@@ -375,4 +375,116 @@ class WaveOutput:
         return
 
 
+class WaveSink:
+    # the empty_callback gets the channel number as argument
+    def __init__(self,
+                 samplerate=44100,
+                 blocksize=441,
+                 channels=1):
+        super().__init__()
+        
+        self.samplerate = samplerate
+        self.blocksize = blocksize
+        self.channels = channels
+        
+        self.channel_lock = threading.RLock()
+        
+        # available channels
+        self.ch = [None] * channels
+        
+        return
+    
+    
+    def find_free_channel(self):
+        self.channel_lock.acquire()
+
+        idx = None
+        
+        for i in range(0, self.channels):
+            if self.ch[i] is None:
+                idx = i
+                break
+        
+        self.channel_lock.release()
+        return idx
+    
+    
+    def set_channel_source(self, idx, wave_source):
+        self._check_channel_arg(idx)
+        self.channel_lock.acquire()
+        
+        if not self.is_available_channel(idx):
+            raise ValueError("Channel {0} is already in use!".format(idx))
+        
+        self.ch[idx] = wave_source
+        
+        self.channel_lock.release()
+        return
+    
+    
+    def release_channel(self,
+                        idx):
+        self._check_channel_arg(idx)
+        
+        self.ch[idx] = None
+        
+        return
+    
+    
+    def is_available_channel(self,
+                             idx):
+        self._check_channel_arg(idx)
+        self.channel_lock.acquire()
+        
+        result = self.ch[idx] is None
+        
+        self.channel_lock.release()
+        return result
+    
+    
+    def _check_channel_arg(self, idx):
+        if idx < 0 or idx >= self.channels:
+            raise ValueError("Channel number must between 0 and the configured bounds({0}): {1}".format(self.channels, idx))
+        
+        return
+    
+    
+    def start(self):
+        self.stream = sounddevice.OutputStream(
+                samplerate = self.samplerate,
+                blocksize = self.blocksize,
+                #channels=self.channels,
+                # this does not work too well,
+                # we better mix ourselves
+                channels=1,
+                callback=self.sd_callback)
+        
+        self.stream.start()
+        
+        return
+    
+    def stop(self):
+        self.stream.stop()
+        self.stream = None
+        
+        return
+    
+    
+    def sd_callback(self, outdata, frames, time, status):
+        if status:
+            print(status)
+            
+        output = np.array([0]*self.blocksize, dtype='float64')
+        
+        for ch in self.ch:
+            if ch is not None:
+                output += ch.get()
+            
+        output /= self.channels
+        
+        outdata[:, 0] = output
+
+        return
+
+
 # kate: space-indent on; indent-width 4; mixedindent off; indent-mode python; indend-pasted-text false; remove-trailing-space off
