@@ -913,6 +913,114 @@ class Cell(WaveSource):
         return
 
 
+class FMChannel(WaveSource):
+    CELL_COUNT = 2
+    
+    
+    def __init__(self,
+                 chid=None,
+                 samplerate=44100,
+                 blocksize=441,
+                 done_callback = None):
+        super(FMChannel, self).__init__(chid=chid,
+                                        samplerate=samplerate,
+                                        blocksize=blocksize,
+                                        done_callback=done_callback)
+        
+        self.cells = []
+        for i in range(0, self.CELL_COUNT):
+            self.cells.append(
+                Cell(i,
+                     None,
+                     samplerate, blocksize,
+                     self.cell_done_callback))
+        
+        # set fm
+        self.set_fm_mode(True)
+        
+        self.cell_active = [False]*self.CELL_COUNT
+        
+        return
+    
+    
+    def set_envelope(self, idx, env_p):
+        if idx < 0 or idx > len(self.cells)-1:
+            raise ValueError("Cell index {0} is out of bounds!".format(idx))
+        
+        self.cells[idx].set_envelope(env_p)
+        
+        return
+    
+    
+    def set_waveform(self, idx, waveform):
+        if idx < 0 or idx > len(self.cells)-1:
+            raise ValueError("Cell index {0} is out of bounds!".format(idx))
+        
+        self.cells[idx].set_waveform(waveform)
+        
+        return
+    
+    
+    def set_frequency(self, frequency):
+        for i in range(0, len(self.cells)):
+            self.cells[i].set_frequency(frequency)
+        
+        return
+    
+    
+    def set_midx(self, midx):
+        self.cells[0].set_midx(midx)
+        
+        return
+    
+    
+    def set_fm_mode(self, fm_mode):
+        self.fm_mode = fm_mode
+        self.cells[0].set_modulator(self.cells[1] if fm_mode else None)
+        
+        return
+    
+    
+    def strike(self):
+        for i in range(0, len(self.cells)):
+            self.cells[i].strike()
+        
+        return
+    
+    
+    def release(self):
+        for i in range(0, len(self.cells)):
+            self.cells[i].release()
+        
+        return
+    
+    
+    def tunedown(self):
+        for i in range(0, len(self.cells)):
+            self.cells[i].tunedown()
+        
+        return
+    
+    
+    def get(self):
+        wave = self.cells[0].get()
+        
+        if not self.fm_mode:
+            wave += self.cells[1].get()
+            wave /= 2
+        
+        return wave
+    
+    
+    def cell_done_callback(self, chid):
+        self.cell_active[chid] = False
+        
+        if not True in self.cell_active:
+            self.done()
+        
+        return
+
+
 class SineAudioprocessor(MidiMessageProcessorBase,
                          DispatchPanelListener):
     
