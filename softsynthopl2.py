@@ -679,37 +679,31 @@ class FrequencyControl(KnobPanelListener):
 
 
 class WaveControls(DispatchPanelListener):
-    NONE = 0
-    
-    # wave forms
-    SINE = 1
-    SAWTOOTH = 2
-    SQUARE = 3
-    
-    # operation modes
-    MUL = 1
-    ADD = 2
-    FOLD = 3
-    
     MODECOLOR = [dispatchpanel.COL_OFF,
                  dispatchpanel.COL_GREEN,
                  dispatchpanel.COL_YELLOW,
                  dispatchpanel.COL_RED]
     
     WAVENOTES = [22, 23]
-    OPNOTE = 21
+    FMNOTE = 21
     
-    def __init__(self, dispatch_panel):
+    def __init__(self, 
+                 dispatch_panel,
+                 waveform_callback=None,
+                 fm_callback=None):
         super().__init__()
         
         self.dp = dispatch_panel
         dispatch_panel.add_dispatch_panel_listener(self)
         
-        self.waveform=[0,0]
-        self.set_waveform(WaveControls.SINE, 0)
-        self.set_waveform(WaveControls.SINE, 1)
+        self.waveform_callback = waveform_callback
+        self.fm_callback = fm_callback
         
-        self.set_op_mode(WaveControls.FOLD)
+        self.waveform=[0,0]
+        self.set_waveform(Cell.WAVE_SINE, 0)
+        self.set_waveform(Cell.WAVE_SINE, 1)
+        
+        self.set_fm_mode(True)
         
         return
     
@@ -725,34 +719,42 @@ class WaveControls(DispatchPanelListener):
                 wf = 0
             self.set_waveform(wf, idx)
         
-        if note == self.OPNOTE:
-            op = self.op_mode + 1
-            if op >= len(WaveControls.MODECOLOR):
-                op = 0
-            self.set_op_mode(op)
+        if note == self.FMNOTE:
+            self.set_fm_mode(not self.fm_mode)
         
         return
     
     
     def set_waveform(self, waveform, idx=0):
+        _waveform = self.waveform[idx]
+        
         self.waveform[idx] = waveform
         self.dp.setColor(WaveControls.WAVENOTES[idx],
                          WaveControls.MODECOLOR[waveform])
-        return
+        
+        if self.waveform_callback is not None:
+            self.waveform_callback(idx, waveform)
+        
+        return _waveform
     
     
     def get_waveform(self, idx=0):
         return self.waveform[idx]
     
     
-    def set_op_mode(self, op_mode):
-        self.op_mode = op_mode
-        self.dp.setColor(WaveControls.OPNOTE,
-                         WaveControls.MODECOLOR[op_mode])
+    def set_fm_mode(self, fm_mode):
+        self.fm_mode = fm_mode
+        self.dp.setColor(WaveControls.FMNOTE,
+                         dispatchpanel.COL_GREEN if fm_mode else dispatchpanel.COL_YELLOW)
+        
+        if self.fm_callback is not None:
+            self.fm_callback(fm_mode)
+        
+        return
     
     
-    def get_op_mode(self):
-        return self.op_mode
+    def get_fm_mode(self):
+        return self.fm_mode
 
 
 class Cell(WaveSource):
