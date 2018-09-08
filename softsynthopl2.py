@@ -599,12 +599,15 @@ class HullCurveControls(KnobPanelListener):
     
     def update_hull(self):
         if self.parameter_callback is not None:
-            self.parameter_callback(self.hull_t_attack,
-                                    self.hull_t_decay,
-                                    self.hull_t_release,
-                                    self.hull_a_sustain)
+            env_p = EnvelopeParameters()
+            env_p.set_attack(self.hull_t_attack)
+            env_p.set_decay(self.hull_t_decay)
+            env_p.set_release(self.hull_t_release)
+            env_p.set_sustain(self.hull_a_sustain)
+            env_p.set_hold(True)
+
+            self.parameter_callback(env_p)
         return
-    
     
     
     def process_knob_value_change(self, idx, value):
