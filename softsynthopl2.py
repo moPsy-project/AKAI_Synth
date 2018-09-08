@@ -15,17 +15,17 @@ import copy
 import numpy as np
 from scipy import signal
 
+import threading
+
 # local modules
 from midiproc import MidiMessageProcessorBase
 from knobpanel import KnobPanelListener
 from dispatchpanel import DispatchPanelListener
 import dispatchpanel
 
-from waveoutput import WaveOutput
+from waveoutput import WaveSource
+from waveoutput import WaveSink
 
-
-wo = WaveOutput(channels=8)
-wo.start()
 
 # Source: https://upload.wikimedia.org/wikipedia/commons/a/ad/Piano_key_frequencies.png
 SCALE_TONE_FREQUENCIES = [
@@ -1030,7 +1030,6 @@ class FMChannel(WaveSource):
 
 class SineAudioprocessor(MidiMessageProcessorBase,
                          DispatchPanelListener):
-    
     def __init__(self, 
                  dispatch_panel, 
                  knob_panel,
@@ -1039,13 +1038,33 @@ class SineAudioprocessor(MidiMessageProcessorBase,
         
         self.sample_frequency = sample_frequency
         
-        self.duration = 0.25
-        self.hull = np.array([])
+        self.ws = WaveSink(channels=8)
+        self.ws.start()
+        
+        self.fm_channel_lock = threading.RLock()
+        
+        self.fm_channels = 8
+        self.fm_channel = []
+        
+        for i in range(0, self.fm_channels):
+            self.fm_channel.append(
+                FMChannel(i,
+                          sample_frequency, 441,
+                          self.channel_done_callback))
+            
+            self.ws.set_channel_source(i, self.fm_channel[i])
+        
+        self.fm_channel_order = []
+        self.note2channel = {}
         
         self.hc = HullCurveControls(knob_panel,
                                     parameter_callback=self.update_hull)
-        self.fc = FrequencyControl(knob_panel)
-        self.wc = WaveControls(dispatch_panel)
+        self.mc = ModulationIndexControl(knob_panel,
+                                         self.modulation_index_callback)
+        
+        self.wc = WaveControls(dispatch_panel,
+                               self.waveform_callback,
+                               self.fm_mode_callback)
         
         return
     
@@ -1056,62 +1075,117 @@ class SineAudioprocessor(MidiMessageProcessorBase,
     
     def process(self, msg):
         if msg.type=='note_on':
-            self.play_note(msg.note)
+            self.dispatch_strike(msg.note)
         
+        if msg.type=='note_off':
+            self.dispatch_release(msg.note)
+
         return
     
     
-    def play_note(self, note):
-        freq = self.note2freq(note)
+    def _remove_channel_from_order(self, idx):
+        self.fm_channel_lock.acquire()
         
-        # amplitudes
-        a0 = self.fc.get_amp(0)
-        a1 = a1 = self.fc.get_amp(1)
+        self.fm_channel_order = [c for c in self.fm_channel_order if c != idx]
         
-        # frequency multiplier for the second wave
-        fmul = self.fc.get_freqmul()
+        self.fm_channel_lock.release()
+        return
+    
+    
+    def _put_channel_to_order(self, idx):
+        self.fm_channel_lock.acquire()
         
-        op_mode = self.wc.get_op_mode()
+        self._remove_channel_from_order(idx)
+        self.fm_channel_order.append(idx)
         
-        # generate second wave, use wave0 as basewave in op mode FOLD
-        if self.wc.get_waveform(1) == WaveControls.NONE:
-            wave1 = 1
+        self.fm_channel_lock.release()
+        return
+    
+    
+    def _free_channel(self, idx):
+        self.fm_channel_lock.acquire()
+        
+        self._remove_channel_from_order(idx)
+        
+        # remove from note dictionary
+        i = None
+        for n, c in self.note2channel.items():
+            if c == idx:
+                i = idx
+                break
+        
+        if i is not None:
+            del self.note2channel[n]
+        
+        self.fm_channel_lock.release()
+        return
+    
+    
+    def _find_channel(self):
+        self.fm_channel_lock.acquire()
+        
+        idx = 0
+        
+        # try an unused channel
+        unused = [c for c in range(0, self.fm_channels) if c not in self.fm_channel_order]
+        
+        if len(unused) > 0:
+            idx = unused[0]
         else:
-            wave1 = self.genwave(freq*fmul,
-                                 self.wc.get_waveform(1))
-        # apply amplitude
-        wave1 *= a1
+            # if not available use the channel that has been used for the longest time
+            idx = self.fm_channel_order[0]
 
-        # generate base wave
-        if self.wc.get_waveform(0) == WaveControls.NONE:
-            wave0 = 1
-        else:
-            basewave = wave1 if op_mode == WaveControls.FOLD else None
-            wave0 = self.genwave(freq, 
-                                 self.wc.get_waveform(0), 
-                                 basewave)
-        # apply amplitude
-        wave0 *= a0
+        self.fm_channel_lock.release()
+        return idx
         
+    
+    def dispatch_strike(self, note):
+        self.fm_channel_lock.acquire()
         
-        # combine the waves bases on op mode
-        if op_mode == WaveControls.MUL:
-            wave = wave0 * wave1
-        elif op_mode == WaveControls.ADD:
-            wave = wave0 + wave1
-            # normalize the amplitude
-            wave /= 2
-        elif op_mode == WaveControls.FOLD:
-            wave = wave0
-        else:
-            wave = wave0
+        # find a suitable channel
+        idx = None
         
-        wave_output = wave
+        # check if channel is active
+        if note in self.note2channel:
+            idx = self.note2channel[note]
+            # tune channel down
+            self.fm_channel[idx].tunedown()
+
+        # otherwise find a channel
+        idx = self._find_channel()
+        # free the channel
+        self._free_channel(idx)
+
         
-        # only play if the result is an actual ndarray
-        if isinstance(wave, np.ndarray):
-            wo.play(wave_output)
+        self._put_channel_to_order(idx)
+        self.note2channel[note] = idx
         
+        freq = self.note2freq(note)
+        self.fm_channel[idx].set_frequency(freq)
+        
+        self.fm_channel[idx].strike()
+        
+        self.fm_channel_lock.release()
+        return
+        
+    
+    def dispatch_release(self, note):
+        self.fm_channel_lock.acquire()
+        
+        if note in self.note2channel:
+            idx = self.note2channel[note]
+            self.fm_channel[idx].release()
+        
+        self.fm_channel_lock.release()
+        return
+    
+    
+    def channel_done_callback(self, channel):
+        self.fm_channel_lock.acquire()
+        
+        self._free_channel(channel)
+        
+        self.fm_channel_lock.release()
         return
     
     
@@ -1124,80 +1198,34 @@ class SineAudioprocessor(MidiMessageProcessorBase,
         return SCALE_TONE_FREQUENCIES[step] * coeff
     
     
-    def wave_generator(self, f, waveform):
-        # one period on the chosen frequency
-        w = 2 * np.pi * f
-        t = np.linspace(0, 2 * np.pi, num=self.sample_frequency // f)
-        
-        if waveform == WaveControls.SINE:
-            wave = np.sin(t)
-        elif waveform == WaveControls.SAWTOOTH:
-            wave = signal.sawtooth(t)
-        elif waveform == WaveControls.SQUARE:
-            wave = signal.square(t)
-        else: # unknown waveform or NONE
-            wave = np.array([0], dtype='float64')
-        
-        gen = FixedWaveLoopSequencer(wave, 411)
-        
-        return gen
-    
-    
-    def genwave(self, f, waveform, basewave=None):
-        length = len(self.hull)
-        hgen = FixedWaveSequencer(self.hull, 411)
-        
-        gen = self.wave_generator(f, waveform)
-        
-        wave = np.array([], dtype='float64')
-        hull = np.array([], dtype='float64')
-        while len(wave) < length:
-            wave = np.append(wave, gen.get())
-            hull = np.append(hull, hgen.get())
-        
-        return hull * wave
-    
     def update_hull(self,
-                    attack,
-                    decay,
-                    release,
-                    sustain):
-        self.hull = self.calculate_hull(attack,
-                                        decay,
-                                        release,
-                                        sustain,
-                                        self.duration)
+                    env_p):
+        for c in range(0, self.fm_channels):
+            for i in range(0, FMChannel.CELL_COUNT):
+                self.fm_channel[c].set_envelope(i, env_p)
+        
         return
     
     
-    def calculate_hull(self,
-                       t_attack,
-                       t_decay,
-                       t_release,
-                       a_sustain,
-                       duration):
-        t_sustain = duration - t_attack - t_decay
-        if t_sustain < 0:
-            t_sustain = 0
+    def waveform_callback(self, idx, waveform):
+        for i in range(0, self.fm_channels):
+            self.fm_channel[i].set_waveform(idx, waveform)
         
-        samples = self.sample_frequency
+        return
+    
+    
+    def fm_mode_callback(self, fm_mode):
+        for i in range(0, self.fm_channels):
+            self.fm_channel[i].set_fm_mode(fm_mode)
         
-        # construct the hull curve
-        hull_attack  = np.linspace(0, 1, 
-                                num=samples * t_attack)
-        hull_decay   = np.linspace(1, a_sustain, 
-                                num = samples * t_decay)
-        hull_sustain = np.linspace(a_sustain, a_sustain, 
-                                num = samples * t_sustain)
-        hull_release = np.linspace(a_sustain, 0, num = 
-                                samples * t_release)
+        return
+    
+    
+    def modulation_index_callback(self, midx):
+        for i in range(0, self.fm_channels):
+            self.fm_channel[i].set_midx(midx)
         
-        new_hull = hull_attack
-        new_hull = np.append(new_hull, hull_decay)
-        new_hull = np.append(new_hull, hull_sustain)
-        new_hull = np.append(new_hull, hull_release)
-        
-        return new_hull
+        return
 
 
 # kate: space-indent on; indent-width 4; mixedindent off; indent-mode python; indend-pasted-text false; remove-trailing-space off
