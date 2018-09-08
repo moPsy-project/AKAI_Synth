@@ -14,12 +14,51 @@ import numpy as np
 import threading
 import asyncio
 
-class ChannelQueue:
-    # the empty_callback gets the channel number as argument
+class WaveSource:
+    def __init__(self,
+                 chid=None,
+                 samplerate=None,
+                 blocksize=None,
+                 done_callback=None):
+        self.chid = chid
+        self.samplerate = samplerate
+        self.blocksize = blocksize
+        self.done_callback = done_callback
+    
+    
+    def get_chid(self):
+        return self.chid
+    
+    
+    def get_samplerate(self):
+        return self.samplerate
+    
+    
+    def get_blocksize(self):
+        return self.blocksize
+    
+    
+    def done(self):
+        if self.done_callback is not None:
+            self.done_callback(self.get_chid())
+        return
+    
+    
+    def get(self):
+        pass
+
+
+class ChannelQueue(WaveSource):
+    # the *_callback gets the channel number as argument
     def __init__(self, 
-                 channel_number=0,
+                 blocksize=441,
+                 chid=0,
+                 last_callback=None,
                  empty_callback=None):
-        super().__init__()
+        super(ChannelQueue,self).__init__(chid,
+                                          None,
+                                          blocksize,
+                                          empty_callback)
         
         self.channel_lock = threading.RLock()
         
@@ -28,13 +67,8 @@ class ChannelQueue:
         self.index = 0
 
         # this is an arbitrary number which is passed to callback functions
-        self.channel_number = channel_number
-        self.empty_callback = empty_callback
+        self.last_callback = last_callback
         return
-    
-    
-    def get_channel_number(self):
-        return self.channel_number()
     
     
     def _lock(self):
@@ -71,14 +105,14 @@ class ChannelQueue:
         return
     
     
-    def stop(self, blocksize=0):
+    def stop(self):
         """Stop emitting samples, graceful with blocksize"""
         self._lock()
         
         # clear current sample or replace by smoothing
-        if (blocksize > 0) and (not self.empty()):
-            stop_hull = np.linspace(1.0, 0.0, num=blocksize)
-            self.current = self.get(blocksize, pad=True) * stop_hull
+        if (self.get_blocksize() > 0) and (not self.empty()):
+            stop_hull = np.linspace(1.0, 0.0, num=self.get_blocksize())
+            self.current = self.get() * stop_hull
             self.index = 0
         else:
             self.current = None
@@ -98,22 +132,21 @@ class ChannelQueue:
         """Replace current queue with new samples, maybe graceful"""
         self._lock()
         
-        self.stop(blocksize)
+        self.stop()
         self.enqueue(wave)
         
         self._release()
         return
     
     
-    def get(self, blocksize, pad=False):
-        """Get blocksize samples from the channel, can pad with zero"""
+    def get(self):
         self._lock()
         
         samples = np.array([])
         
         # fill the samples until we've run out
-        while (not self.empty()) and len(samples) < blocksize:
-            count = blocksize - len(samples)
+        while (not self.empty()) and len(samples) < self.get_blocksize():
+            count = self.get_blocksize() - len(samples)
             
             # check if next queued array must be used
             if self.current is None:
@@ -133,13 +166,13 @@ class ChannelQueue:
                 if self.index >= len(self.current):
                     self.current = None
                     # callback if empty
-                    if (self.empty_callback is not None) and self.empty():
-                        self.empty_callback(self.channel_number)
+                    if self.empty():
+                        self.done()
         
         # padding
-        if pad and len(samples) < blocksize:
+        if len(samples) < self.get_blocksize():
             samples = np.append(samples, 
-                                [0] * (blocksize - len(samples)))
+                                [0] * (self.get_blocksize() - len(samples)))
         
         
         self._release()
@@ -148,15 +181,24 @@ class ChannelQueue:
         
     def _next(self):
         """Take next sample array from the queue"""
+        empty = False
         self._lock()
         
-        try:
+        last = False
+        
+        if self.sample_queue.empty():
+            self.current = None
+            empty = True
+        else:
             self.current = self.sample_queue.get_nowait()
             self.index = 0
-        except asyncio.QueueEmpty:
-            self.current = None
-        
+            last = self.sample_queue.empty()
+            
         self._release()
+        
+        if  last and self.last_callback is not None:
+            self.last_callback(self.get_chid())
+        
         return self.current
 
 
@@ -183,7 +225,8 @@ class WaveOutput:
         self.ch = []
         for i in range(1, channels+1):
             self.ch.append(
-                ChannelQueue(channel_number = i,
+                ChannelQueue(chid = i,
+                             blocksize=441,
                              empty_callback = self.channel_empty_callback))
         
         return
@@ -213,7 +256,7 @@ class WaveOutput:
         ch = 0
         
         # try an unused channel
-        unused = [c for c in range(0, self.channels) if c not in self.order]
+        unused = [c for c in range(1, self.channels+1) if c not in self.order]
         
         if len(unused) > 0:
             ch = unused[0]
@@ -223,7 +266,55 @@ class WaveOutput:
         
         self.channel_lock.release()
         return ch
+    
+    
+    def reserve_channel(self, 
+                        ch=None):
+        self._check_channel_arg(ch)
+        self.channel_lock.acquire()
+
+        result = None
         
+        
+        if ch is None:
+            result = self._find_free_channel()
+        elif is_available_channel(ch):
+            result = ch
+        
+        if result is not None:
+            self._put_ch_to_order(result)
+
+        
+        self.channel_lock.release()
+        return result
+    
+    
+    def release_channel(self,
+                        ch):
+        self._check_channel_arg(ch)
+        
+        self._remove_ch_from_order(ch)
+        
+        return
+    
+    
+    def is_available_channel(self,
+                             ch):
+        self._check_channel_arg(ch)
+        self.channel_lock.acquire()
+        
+        result = ch is None or ch in self.ch
+        
+        self.channel_lock.release()
+        return result
+    
+    
+    def _check_channel_arg(self, ch):
+        if ch is not None and (ch < 1 or ch > self.channels):
+            raise ValueError("Channel number must between 1 and the configured bounds({0}): {1}".format(self.channels, ch))
+        
+        return
+    
     
     def start(self):
         self.stream = sounddevice.OutputStream(
@@ -248,31 +339,21 @@ class WaveOutput:
     
     def play(self,
              wave,
-             channel=0,
+             channel=None,
              replace=True):
 
-        # take the channel that has been used last
-        self.channel_lock.acquire()
-
-        c = 0
-        if channel == 0:
-            c = self._find_free_channel()
-        else:
-            c = channel-1
-        self._put_ch_to_order(c)
-            
-        self.channel_lock.release()
+        c = self.reserve_channel()
         
         if replace:
-            self.ch[c].replace(wave, blocksize=self.blocksize)
+            self.ch[c-1].replace(wave, blocksize=self.blocksize)
         else:
-            self.ch[c].enqueue(wave)
+            self.ch[c-1].enqueue(wave)
         
         return c
     
     
     def channel_empty_callback(self, channel_number):
-        self._put_ch_to_order(channel_number-1)
+        self.release_channel(channel_number)
         
         if self.empty_callback is not None:
             self.empty_callback(channel_number)
@@ -287,7 +368,119 @@ class WaveOutput:
         output = np.array([0]*self.blocksize, dtype='float64')
         
         for i in self.order:
-            output += self.ch[i].get(self.blocksize, pad=True)
+            output += self.ch[i-1].get()
+            
+        output /= self.channels
+        
+        outdata[:, 0] = output
+
+        return
+
+
+class WaveSink:
+    # the empty_callback gets the channel number as argument
+    def __init__(self,
+                 samplerate=44100,
+                 blocksize=441,
+                 channels=1):
+        super().__init__()
+        
+        self.samplerate = samplerate
+        self.blocksize = blocksize
+        self.channels = channels
+        
+        self.channel_lock = threading.RLock()
+        
+        # available channels
+        self.ch = [None] * channels
+        
+        return
+    
+    
+    def find_free_channel(self):
+        self.channel_lock.acquire()
+
+        idx = None
+        
+        for i in range(0, self.channels):
+            if self.ch[i] is None:
+                idx = i
+                break
+        
+        self.channel_lock.release()
+        return idx
+    
+    
+    def set_channel_source(self, idx, wave_source):
+        self._check_channel_arg(idx)
+        self.channel_lock.acquire()
+        
+        if not self.is_available_channel(idx):
+            raise ValueError("Channel {0} is already in use!".format(idx))
+        
+        self.ch[idx] = wave_source
+        
+        self.channel_lock.release()
+        return
+    
+    
+    def release_channel(self,
+                        idx):
+        self._check_channel_arg(idx)
+        
+        self.ch[idx] = None
+        
+        return
+    
+    
+    def is_available_channel(self,
+                             idx):
+        self._check_channel_arg(idx)
+        self.channel_lock.acquire()
+        
+        result = self.ch[idx] is None
+        
+        self.channel_lock.release()
+        return result
+    
+    
+    def _check_channel_arg(self, idx):
+        if idx < 0 or idx >= self.channels:
+            raise ValueError("Channel number must between 0 and the configured bounds({0}): {1}".format(self.channels, idx))
+        
+        return
+    
+    
+    def start(self):
+        self.stream = sounddevice.OutputStream(
+                samplerate = self.samplerate,
+                blocksize = self.blocksize,
+                #channels=self.channels,
+                # this does not work too well,
+                # we better mix ourselves
+                channels=1,
+                callback=self.sd_callback)
+        
+        self.stream.start()
+        
+        return
+    
+    def stop(self):
+        self.stream.stop()
+        self.stream = None
+        
+        return
+    
+    
+    def sd_callback(self, outdata, frames, time, status):
+        if status:
+            print(status)
+            
+        output = np.array([0]*self.blocksize, dtype='float64')
+        
+        for ch in self.ch:
+            if ch is not None:
+                output += ch.get()
             
         output /= self.channels
         
