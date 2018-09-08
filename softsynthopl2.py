@@ -618,36 +618,36 @@ class HullCurveControls(KnobPanelListener):
         
         return
 
-
-class FrequencyControl(KnobPanelListener):
+class ModulationIndexControl(KnobPanelListener):
     def __init__(self, 
-                 knob_panel):
+                 knob_panel,
+                 modulation_index_callback=None):
         super().__init__()
         self.kp = knob_panel
         self.kp.add_knob_value_listener(self)
+        
+        self.modulation_index_callback = modulation_index_callback
         
         # Knob amplitude mapping
         self.knob_amp_map = np.linspace(-0.9, 0, num=64)
         self.knob_amp_map = np.append(self.knob_amp_map,
                                   np.linspace(0, 0.9, num=64))
         
-        # Knob to frequency value mapping
-        self.knob_fmul_map = np.linspace(1/16, 1, num=64)
-        self.knob_fmul_map = np.append(self.knob_fmul_map,
-                                  np.linspace(1, 16, num=64))
+        # Knob to modulation index mapping
+        self.knob_midx_map = list(map(lambda x: math.floor(x),
+                                  np.linspace(0, 15, num=128)))
         
         # use the knob panel and observer mechanism to set the initial values
         self.amp = [0.5, 0.5]
         self.kp.set_target_value(0, 64)
-        self.freqmul = 1
-        self.kp.set_target_value(1, 64) 
+        self.midx = 1
+        self.kp.set_target_value(1, 9) 
         
         return
     
     
     def adapt_knob_values(self, idx, value):
         # set the values according to Knob
-        
         
         if idx == 0: #amplitude distribution
             v = self.knob_amp_map[value]
@@ -657,8 +657,10 @@ class FrequencyControl(KnobPanelListener):
             print("Changed amplitudes to ", self.amp[0], "and", self.amp[1], ".");
         
         if idx == 1: #frequency multiplier
-            self.freqmul = self.knob_fmul_map[value]
-            print("Changed frequency multiplier to ", self.freqmul, ".");
+            self.midx = self.knob_midx_map[value]
+            if self.modulation_index_callback is not None:
+                self.modulation_index_callback(self.midx)
+            print("Changed modulation index to ", self.midx, ".");
         
         return
     
@@ -674,8 +676,8 @@ class FrequencyControl(KnobPanelListener):
         return self.amp[idx]
     
     
-    def get_freqmul(self):
-        return self.freqmul
+    def get_midx(self):
+        return self.midx
 
 
 class WaveControls(DispatchPanelListener):
