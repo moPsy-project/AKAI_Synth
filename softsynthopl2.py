@@ -5,6 +5,9 @@
 # OPL2-type software synthesizer
 #
 # Author: Stefan Haun <tux@netz39.de>
+#
+# SPDX-License-Identifier: MIT
+# License-Filename: LICENSES/MIT.txt
 
 import mido
 
