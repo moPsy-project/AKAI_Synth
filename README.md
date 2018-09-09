@@ -51,3 +51,29 @@ python3 AKAI_Synth.py
 ```
 
 Press any key to quit.
+
+## Status
+This is a very basic first go:
+* Control pads and knobs can be read from and written to. There is also a UI around showing where the knobs should be, as their positions cannot be set via MIDI.
+* The synthesizer has basic generator cells and can add/fm them together.
+* Sound generation is live and cached. Optimization pending.
+
+
+## Roadmap
+Immediate roadmap:
+* Extend the synthesizer to support all functions of the YM3812
+* Be able to store, edit and load more instruments
+* Add the ability to create loops and record into loops
+* Add the ability to play pre-defined samples
+* Introduce virtual controllers and command routing for the knobs/control panel
+* Add a cool number display on the control pad when knobs are turned
+* If no MIDI controller is available, use the default MIDI input. This allows more complex MIDI routing and playbacks.
+* Persist settings and created instruments
+* Allow to tune the system to other (native) instruments
+
+Further out:
+* Add a Web-based UI to show settings on a screen and allow a more complex control of the sythesizer
+* Add more complex music generation, taking scales, chords and genres into account
+* Find a way to adapt playback/generation speed to other people in the ensemble, e.g. by monitoring keyboard input
+* Analyze the music generation and allow to generate further music on the fly, e.g. by calculating the chroma vectors, finding rhythms, …
+* Allow to record, sound-effect and playback other band members
