@@ -3,6 +3,9 @@
 # AKAI Synth - SoundBlaster FM based synthesizer with AKAI controller
 #
 # Author: Stefan Haun <tux@netz39.de>
+#
+# SPDX-License-Identifier: MIT
+# License-Filename: LICENSES/MIT.txt
 
 import signal
 import sys
