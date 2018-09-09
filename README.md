@@ -41,3 +41,13 @@ Be careful about package names, there are variants around the rtmidi package. Ma
 ### Anywhere else
 
 Make sure that to install the exact dependencies, as there are some variants around the rtmidi package. If there are caveats on certain systems, feel free to add a sub-section here and hand in a PR. Contributions are mist appreciated.
+
+## Usage
+
+Attach the MIDI Controller via USB and start the application:
+
+```
+python3 AKAI_Synth.py
+```
+
+Press any key to quit.
