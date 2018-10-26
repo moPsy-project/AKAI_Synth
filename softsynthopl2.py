@@ -546,10 +546,12 @@ class EnvelopeGenerator:
 class HullCurveControls(KnobPanelListener):
     def __init__(self, 
                  knob_panel,
+                 knobs = [4, 5, 6, 7],
                  parameter_callback=None):
         super().__init__()
         self.kp = knob_panel
         self.kp.add_knob_value_listener(self)
+        self.knobs = knobs
         
         self.parameter_callback = parameter_callback
         
@@ -568,10 +570,10 @@ class HullCurveControls(KnobPanelListener):
         
         # TODO can we get the values here?
         # use the knob panel and observer mechanism to set the initial values
-        self.kp.set_target_value(4, 12) # Attack
-        self.kp.set_target_value(5, 21) # Decay
-        self.kp.set_target_value(6, 115) # Sustain
-        self.kp.set_target_value(7, 39) # Release
+        self.kp.set_target_value(self.knobs[0], 12) # Attack
+        self.kp.set_target_value(self.knobs[1], 21) # Decay
+        self.kp.set_target_value(self.knobs[2], 115) # Sustain
+        self.kp.set_target_value(self.knobs[3], 39) # Release
         
         self.update_hull()
         
@@ -581,19 +583,19 @@ class HullCurveControls(KnobPanelListener):
     def adapt_knob_values(self, idx, value):
         # set the values according to Knob
         
-        if idx == 4: #attack time
+        if idx == self.knobs[0]: #attack time
             self.hull_t_attack = self.knob_map[value]
             print("Changed attack time to ", self.hull_t_attack, "s.");
         
-        if idx == 5: #decay time
+        if idx == self.knobs[1]: #decay time
             self.hull_t_decay = self.knob_map[value]
             print("Changed decay time to ", self.hull_t_decay, "s.");
         
-        if idx == 6: #sustain amplitude
+        if idx == self.knobs[2]: #sustain amplitude
             self.hull_a_sustain = value/127
             print("Changed sustain amplitude to ", self.hull_a_sustain*100, "%.");
         
-        if idx == 7: #release time
+        if idx == self.knobs[3]: #release time
             self.hull_t_release = self.knob_map[value]
             print("Changed release time to ", self.hull_t_release, "s.");
         
