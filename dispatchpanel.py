@@ -42,7 +42,7 @@ class DispatchPanel(MidiMessageProcessorBase):
         return
 
     def match(self, msg):
-        return (msg.type=='note_on' or msg.type=='note_off') and msg.channel==0 and msg.note <= 39
+        return (msg.type=='note_on' or msg.type=='note_off') and msg.channel==0 and msg.note <= 65
 
     def process(self, msg):
         if msg.type == 'note_on':
@@ -57,7 +57,7 @@ class DispatchPanel(MidiMessageProcessorBase):
     
     
     def setColor(self, note, color):
-        if note > 39:
+        if note > 65:
             return # TODO exception
         
         msg = mido.Message('note_on', channel=0, note=note, velocity=color)
