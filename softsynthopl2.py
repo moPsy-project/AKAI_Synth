@@ -691,11 +691,13 @@ class WaveControls(DispatchPanelListener):
     
     WAVENOTES = [22, 23]
     FMNOTE = 21
+    MODIDXNOTES = [65, 64]
     
     def __init__(self, 
                  dispatch_panel,
                  waveform_callback=None,
-                 fm_callback=None):
+                 fm_callback=None,
+                 modidx_callback=None):
         super().__init__()
         
         self.dp = dispatch_panel
@@ -703,12 +705,14 @@ class WaveControls(DispatchPanelListener):
         
         self.waveform_callback = waveform_callback
         self.fm_callback = fm_callback
+        self.modidx_callback = modidx_callback
         
         self.waveform=[0,0]
         self.set_waveform(Cell.WAVE_SINE, 0)
         self.set_waveform(Cell.WAVE_SINE, 1)
         
         self.set_fm_mode(True)
+        self.set_modidx(0)
         
         return
     
@@ -726,6 +730,11 @@ class WaveControls(DispatchPanelListener):
         
         if note == self.FMNOTE:
             self.set_fm_mode(not self.fm_mode)
+        
+        if note == self.MODIDXNOTES[0]:
+            self.set_modidx(self.get_modidx()-1)
+        if note == self.MODIDXNOTES[1]:
+            self.set_modidx(self.get_modidx()+1)
         
         return
     
@@ -760,6 +769,37 @@ class WaveControls(DispatchPanelListener):
     
     def get_fm_mode(self):
         return self.fm_mode
+    
+    
+    def set_modidx(self, modidx):
+        self.modidx = modidx;
+        
+        # adjust boundaries
+        if self.modidx < 0:
+            self.modidx = 0
+        if self.modidx > 15:
+            self.modidx = 15;
+        
+        # set button colors (only red and off available)
+        self.dp.setColor(WaveControls.MODIDXNOTES[0],
+                         (dispatchpanel.COL_RED
+                          if self.modidx > 0
+                          else dispatchpanel.COL_OFF))
+        self.dp.setColor(WaveControls.MODIDXNOTES[1],
+                         (dispatchpanel.COL_RED
+                          if self.modidx < 15
+                          else dispatchpanel.COL_OFF))
+        
+        if self.modidx_callback is not None:
+            self.modidx_callback(self.modidx)
+        
+        print("Modulation index adjusted to {0}.".format(self.modidx))
+        return
+    
+    
+    def get_modidx(self):
+        return self.modidx
+
 
 
 class Cell(WaveSource):
