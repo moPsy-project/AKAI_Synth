@@ -1102,8 +1102,15 @@ class SineAudioprocessor(MidiMessageProcessorBase,
         self.fm_channel_order = []
         self.note2channel = {}
         
-        self.hc = HullCurveControls(knob_panel,
-                                    parameter_callback=self.update_hull)
+        # carrier hull curve
+        self.hcc = HullCurveControls(knob_panel,
+                                     [0, 1, 2, 3],
+                                     parameter_callback=self.update_hull_c)
+        
+        # modulator hull curve
+        self.hcm = HullCurveControls(knob_panel,
+                                     [4, 5, 6, 7],
+                                     parameter_callback=self.update_hull_m)
         
         self.wc = WaveControls(dispatch_panel,
                                self.waveform_callback,
@@ -1242,11 +1249,18 @@ class SineAudioprocessor(MidiMessageProcessorBase,
         return SCALE_TONE_FREQUENCIES[step] * coeff
     
     
-    def update_hull(self,
-                    env_p):
+    def update_hull_c(self,
+                      env_p):
         for c in range(0, self.fm_channels):
-            for i in range(0, FMChannel.CELL_COUNT):
-                self.fm_channel[c].set_envelope(i, env_p)
+            self.fm_channel[c].set_envelope(0, env_p)
+        
+        return
+    
+    
+    def update_hull_m(self,
+                      env_p):
+        for c in range(0, self.fm_channels):
+            self.fm_channel[c].set_envelope(1, env_p)
         
         return
     
