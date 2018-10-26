@@ -1102,12 +1102,11 @@ class SineAudioprocessor(MidiMessageProcessorBase,
         
         self.hc = HullCurveControls(knob_panel,
                                     parameter_callback=self.update_hull)
-        self.mc = ModulationIndexControl(knob_panel,
-                                         self.modulation_index_callback)
         
         self.wc = WaveControls(dispatch_panel,
                                self.waveform_callback,
-                               self.fm_mode_callback)
+                               self.fm_mode_callback,
+                               self.modulation_index_callback)
         
         return
     
