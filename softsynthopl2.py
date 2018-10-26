@@ -546,10 +546,12 @@ class EnvelopeGenerator:
 class HullCurveControls(KnobPanelListener):
     def __init__(self, 
                  knob_panel,
+                 knobs = [4, 5, 6, 7],
                  parameter_callback=None):
         super().__init__()
         self.kp = knob_panel
         self.kp.add_knob_value_listener(self)
+        self.knobs = knobs
         
         self.parameter_callback = parameter_callback
         
@@ -568,10 +570,10 @@ class HullCurveControls(KnobPanelListener):
         
         # TODO can we get the values here?
         # use the knob panel and observer mechanism to set the initial values
-        self.kp.set_target_value(4, 12) # Attack
-        self.kp.set_target_value(5, 21) # Decay
-        self.kp.set_target_value(6, 115) # Sustain
-        self.kp.set_target_value(7, 39) # Release
+        self.kp.set_target_value(self.knobs[0], 12) # Attack
+        self.kp.set_target_value(self.knobs[1], 21) # Decay
+        self.kp.set_target_value(self.knobs[2], 115) # Sustain
+        self.kp.set_target_value(self.knobs[3], 39) # Release
         
         self.update_hull()
         
@@ -581,19 +583,19 @@ class HullCurveControls(KnobPanelListener):
     def adapt_knob_values(self, idx, value):
         # set the values according to Knob
         
-        if idx == 4: #attack time
+        if idx == self.knobs[0]: #attack time
             self.hull_t_attack = self.knob_map[value]
             print("Changed attack time to ", self.hull_t_attack, "s.");
         
-        if idx == 5: #decay time
+        if idx == self.knobs[1]: #decay time
             self.hull_t_decay = self.knob_map[value]
             print("Changed decay time to ", self.hull_t_decay, "s.");
         
-        if idx == 6: #sustain amplitude
+        if idx == self.knobs[2]: #sustain amplitude
             self.hull_a_sustain = value/127
             print("Changed sustain amplitude to ", self.hull_a_sustain*100, "%.");
         
-        if idx == 7: #release time
+        if idx == self.knobs[3]: #release time
             self.hull_t_release = self.knob_map[value]
             print("Changed release time to ", self.hull_t_release, "s.");
         
@@ -691,11 +693,13 @@ class WaveControls(DispatchPanelListener):
     
     WAVENOTES = [22, 23]
     FMNOTE = 21
+    MODIDXNOTES = [65, 64]
     
     def __init__(self, 
                  dispatch_panel,
                  waveform_callback=None,
-                 fm_callback=None):
+                 fm_callback=None,
+                 modidx_callback=None):
         super().__init__()
         
         self.dp = dispatch_panel
@@ -703,12 +707,14 @@ class WaveControls(DispatchPanelListener):
         
         self.waveform_callback = waveform_callback
         self.fm_callback = fm_callback
+        self.modidx_callback = modidx_callback
         
         self.waveform=[0,0]
         self.set_waveform(Cell.WAVE_SINE, 0)
         self.set_waveform(Cell.WAVE_SINE, 1)
         
         self.set_fm_mode(True)
+        self.set_modidx(0)
         
         return
     
@@ -726,6 +732,11 @@ class WaveControls(DispatchPanelListener):
         
         if note == self.FMNOTE:
             self.set_fm_mode(not self.fm_mode)
+        
+        if note == self.MODIDXNOTES[0]:
+            self.set_modidx(self.get_modidx()-1)
+        if note == self.MODIDXNOTES[1]:
+            self.set_modidx(self.get_modidx()+1)
         
         return
     
@@ -760,6 +771,37 @@ class WaveControls(DispatchPanelListener):
     
     def get_fm_mode(self):
         return self.fm_mode
+    
+    
+    def set_modidx(self, modidx):
+        self.modidx = modidx;
+        
+        # adjust boundaries
+        if self.modidx < 0:
+            self.modidx = 0
+        if self.modidx > 15:
+            self.modidx = 15;
+        
+        # set button colors (only red and off available)
+        self.dp.setColor(WaveControls.MODIDXNOTES[0],
+                         (dispatchpanel.COL_RED
+                          if self.modidx > 0
+                          else dispatchpanel.COL_OFF))
+        self.dp.setColor(WaveControls.MODIDXNOTES[1],
+                         (dispatchpanel.COL_RED
+                          if self.modidx < 15
+                          else dispatchpanel.COL_OFF))
+        
+        if self.modidx_callback is not None:
+            self.modidx_callback(self.modidx)
+        
+        print("Modulation index adjusted to {0}.".format(self.modidx))
+        return
+    
+    
+    def get_modidx(self):
+        return self.modidx
+
 
 
 class Cell(WaveSource):
@@ -1060,14 +1102,20 @@ class SineAudioprocessor(MidiMessageProcessorBase,
         self.fm_channel_order = []
         self.note2channel = {}
         
-        self.hc = HullCurveControls(knob_panel,
-                                    parameter_callback=self.update_hull)
-        self.mc = ModulationIndexControl(knob_panel,
-                                         self.modulation_index_callback)
+        # carrier hull curve
+        self.hcc = HullCurveControls(knob_panel,
+                                     [0, 1, 2, 3],
+                                     parameter_callback=self.update_hull_c)
+        
+        # modulator hull curve
+        self.hcm = HullCurveControls(knob_panel,
+                                     [4, 5, 6, 7],
+                                     parameter_callback=self.update_hull_m)
         
         self.wc = WaveControls(dispatch_panel,
                                self.waveform_callback,
-                               self.fm_mode_callback)
+                               self.fm_mode_callback,
+                               self.modulation_index_callback)
         
         return
     
@@ -1201,11 +1249,18 @@ class SineAudioprocessor(MidiMessageProcessorBase,
         return SCALE_TONE_FREQUENCIES[step] * coeff
     
     
-    def update_hull(self,
-                    env_p):
+    def update_hull_c(self,
+                      env_p):
         for c in range(0, self.fm_channels):
-            for i in range(0, FMChannel.CELL_COUNT):
-                self.fm_channel[c].set_envelope(i, env_p)
+            self.fm_channel[c].set_envelope(0, env_p)
+        
+        return
+    
+    
+    def update_hull_m(self,
+                      env_p):
+        for c in range(0, self.fm_channels):
+            self.fm_channel[c].set_envelope(1, env_p)
         
         return
     
