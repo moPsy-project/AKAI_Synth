@@ -17,6 +17,7 @@ from midiproc import MidiMessageProcessorBase, MidiMessagePrinter
 from dispatchpanel import DispatchPanel, DispatchPanelListener
 from knobpanel import KnobPanel, KnobPanelListener
 from softsynthopl2 import HullCurveControls, SineAudioprocessor
+from floppysequencer import FloppySequencer
 
 
 processors = [MidiMessagePrinter()]
@@ -58,7 +59,8 @@ if __name__ == '__main__':
     dp = DispatchPanel(apc_out)
     kp = KnobPanel(dp)
     
-    processors.append(SineAudioprocessor(dp, kp))
+    #processors.append(SineAudioprocessor(dp, kp))
+    processors.append(FloppySequencer('/dev/ttyACM3'))
     processors.append(dp)
     processors.append(kp)
     
