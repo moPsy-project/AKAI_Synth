@@ -1,0 +1,5 @@
+mido
+sounddevice
+numpy
+scipy
+python-rtmidi
