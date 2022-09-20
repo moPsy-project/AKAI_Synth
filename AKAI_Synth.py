@@ -38,22 +38,29 @@ if __name__ == '__main__':
     
     mido.set_backend('mido.backends.rtmidi')
     
-    print(mido.get_input_names())
+    print(f"Midi Inputs : {mido.get_input_names()}")
+    print(f"Midi Outputs: {mido.get_output_names()}")
         
-    apc_names = list(filter(lambda n: n[0:10] == 'APC Key 25',
+    apc_inputs = list(filter(lambda n: n[0:10] == 'APC Key 25',
                             mido.get_input_names()))
-    print("Available APCs: ", apc_names)
+
+    apc_outputs = list(filter(lambda n: n[0:10] == 'APC Key 25',
+                            mido.get_output_names()))
+
+    print("Available APCs: ", apc_inputs)
     
-    if not apc_names:
+    if not apc_inputs:
         print("Did not find APC controller!")
         sys.exit(-1)
     
-    apc_name = apc_names[0]
-    print("Using MIDI port ", apc_name);
+    apc_in_name = apc_inputs[0]
+    apc_out_name = apc_outputs[0]
+    print("Using MIDI in port : ", apc_in_name);
+    print("Using MIDI out port: ", apc_outputs);
     
-    apc_in = mido.open_input(apc_name,
+    apc_in = mido.open_input(apc_in_name,
                              callback=apc_midi_msg_in)
-    apc_out = mido.open_output(apc_name)
+    apc_out = mido.open_output(apc_out_name)
     
     dp = DispatchPanel(apc_out)
     kp = KnobPanel(dp)
