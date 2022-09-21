@@ -888,7 +888,7 @@ class Cell(WaveSource):
         # one period on the chosen frequency
         w = 2 * np.pi * self.frequency
         t = np.linspace(0, 2 * np.pi, 
-                        num=self.get_samplerate() // self.frequency)
+                        num=int(self.get_samplerate() // self.frequency))
         
         if self.modulator is not None:
            # When there is a modulator, this is the stored wave
