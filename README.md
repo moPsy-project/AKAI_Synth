@@ -17,26 +17,16 @@ There are some library dependencies to enable MIDI access and sound output.
 ### On Debian 
 
 Install the following packages (version numbers denote package versions with have been tested, anything below can and anything above should work):
-* python3-mido:1.1.18-1
-* libasound2-dev:1.1.3-5
-* libjack-dev:0.125.0-2
+* python3-mido:1.2.9-3
+* libasound2-dev:1.2.4-1
+* libjack-dev:0.125.0-2 or libjack-jackd2-dev:1.9.17~dfsg-1
 * libportmidi0:1:217-6
 
 ```
-sudo apt-get install python3-mido libasound2-dev libjack-dev libportmidi0
+sudo apt-get install python3-mido libasound2-dev libjack-jackd2-dev libportmidi0
 ```
 
-The following additional python libraries are needed:
-* python-rtmidi
-* sounddevice
-
-Install als:
-```
-pip3 install --user python-rtmidi
-pip3 install --user sounddevice
-```
-
-Be careful about package names, there are variants around the rtmidi package. Make sure to install exactly the stated package.
+Please check the [requirements file](requirements.txt) for additional Python libraries. 
 
 ### Anywhere else
 

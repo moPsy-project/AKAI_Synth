@@ -1,5 +1,5 @@
-mido
-sounddevice
-numpy
-scipy
-python-rtmidi
+mido==1.2.10
+sounddevice==0.4.5
+numpy==1.23.3
+scipy==1.9.1
+python-rtmidi==1.4.9
