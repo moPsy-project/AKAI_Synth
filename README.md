@@ -26,17 +26,7 @@ Install the following packages (version numbers denote package versions with hav
 sudo apt-get install python3-mido libasound2-dev libjack-dev libportmidi0
 ```
 
-The following additional python libraries are needed:
-* python-rtmidi
-* sounddevice
-
-Install als:
-```
-pip3 install --user python-rtmidi
-pip3 install --user sounddevice
-```
-
-Be careful about package names, there are variants around the rtmidi package. Make sure to install exactly the stated package.
+Please check the [requirements file](requirements.txt) for additional Python libraries. 
 
 ### Anywhere else
 
