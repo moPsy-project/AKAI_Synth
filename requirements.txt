@@ -2,4 +2,4 @@ mido==1.2.10
 sounddevice==0.4.6
 numpy==1.23.3
 scipy==1.10.0
-python-rtmidi==1.4.9
+python-rtmidi==1.5.4

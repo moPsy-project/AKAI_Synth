@@ -26,6 +26,13 @@ Install the following packages (version numbers denote package versions with hav
 sudo apt-get install python3-mido libasound2-dev libjack-jackd2-dev libportmidi0
 ```
 
+With `python-rtmidi` 1.5.4 the alsa libraries are expected in an un-Debian place. A quick fix is:
+
+```bash
+sudo mkdir -p /usr/lib64/alsa-lib
+sudo ln -s /usr/lib/x86_64-linux-gnu/alsa-lib/libasound_module_conf_pulse.so /usr/lib64/alsa-lib/
+```
+
 Please check the [requirements file](requirements.txt) for additional Python libraries. 
 
 ### Anywhere else
